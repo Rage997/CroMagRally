@@ -101,6 +101,16 @@ void InvalidateAllInputs(void)
 	}
 
 }
+void ClearInputStates(void)
+{
+	SDL_ResetKeyboard();
+	InvalidateAllInputs();
+	gTextInput[0] = '\0';
+	gMouseMotionNow = false;
+	for (int i = 0; i < MAX_LOCAL_PLAYERS; i++)
+		SDL_memset(gGamepads[i].needAnalog, 0, sizeof(gGamepads[i].needAnalog));
+}
+
 
 static void UpdateRawKeyboardStates(void)
 {

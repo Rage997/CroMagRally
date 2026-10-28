@@ -151,7 +151,7 @@ static void UpdatePausedMenuCallback(void)
 		PlayerBroadcastNullPacket();
 }
 
-void DoPaused(void)
+int DoPaused(void)
 {
 	MenuStyle style = kDefaultMenuStyle;
 	style.canBackOutOfRootMenu = true;
@@ -160,6 +160,10 @@ void DoPaused(void)
 	style.labelColor = (OGLColorRGBA){.7,.7,.7,1};
 	style.startButtonExits = true;
 
+	static bool active;
+	if (!active)
+	{
+		active = true;
 	PushKeys();										// save key state so things dont get de-synced during net games
 
 	PauseAllChannels(true);
@@ -171,10 +175,15 @@ void DoPaused(void)
 				/* MAIN LOOP */
 				/*************/
 
-	CalcFramesPerSecond();
-	ReadKeyboard();
+		ResetFrameTimer();
+		ReadKeyboard();
+	}
 
 	int outcome = StartMenu(gPauseMenuTree, &style, UpdatePausedMenuCallback, DrawTerrain);
+	if (outcome == MENU_PENDING)
+		return kScreenPending;
+	active = false;
+	SavePrefs();
 
 	gGamePaused = false;
 	PauseAllChannels(false);
@@ -196,4 +205,6 @@ void DoPaused(void)
 			CleanQuit();
 			break;
 	}
+	ResetFrameTimer();
+	return kScreenDone;
 }

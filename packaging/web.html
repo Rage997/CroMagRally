@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#202a2d">
+<title>Cro-Mag Rally</title>
+<link rel="icon" href="CroMagRally.png" type="image/png">
+<link rel="preload" href="web-assets/mac-background.webp" as="image" fetchpriority="high">
+<style>
+:root { color-scheme: dark; font-family: "Courier New", ui-monospace, monospace; color: #bfd7c7; background: #202a2d; --phosphor: #bfd7c7; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+button, a { -webkit-tap-highlight-color: transparent; }
+button { font: inherit; cursor: pointer; }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--phosphor); outline-offset: 4px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+#canvas { display: block; position: fixed; inset: 0; width: 100% !important; height: 100% !important; outline: none; background: #000; }
+#launcher {
+  position: fixed; inset: 0; z-index: 2; display: grid; grid-template-columns: minmax(0, 1fr); place-items: center; overflow: hidden;
+  background: #202a2d; transition: opacity .6s ease, visibility 0s;
+}
+body[data-state="playing"] #launcher { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .6s ease, visibility 0s .6s; }
+.mac-stage { position: relative; width: min(100vw, 160svh); aspect-ratio: 8 / 5; flex: none; }
+.mac-render {
+  display: block; width: 100%; height: 100%; object-fit: contain;
+  mask-image: linear-gradient(to bottom, transparent, #000 8%, #000 97%, transparent),
+    linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
+  mask-composite: intersect;
+}
+.crt {
+  position: absolute; left: 38.07737%; top: 20.66485%; width: 24.26546%; height: 32.70183%;
+  container-type: inline-size; overflow: hidden; color: var(--phosphor); mix-blend-mode: screen;
+  mask: url("web-assets/crt-mask.png") 0 0 / 100% 100% no-repeat;
+}
+.crt-splash { position: absolute; inset: 0; width: 100%; height: 100%; }
+.crt::after {
+  content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none;
+  background: repeating-linear-gradient(transparent 0 2px, #00000016 2px 3px);
+  box-shadow: inset 0 0 2.5cqw 1cqw #0009;
+}
+.copyright { position: absolute; top: 90.7%; width: 100%; margin: 0; text-align: center; font-size: max(8px, 2.6cqw); line-height: 1.3; color: #9db7a5; }
+.credits { position: absolute; top: 95.5%; width: 100%; margin: 0; text-align: center; font-size: max(7px, 2.1cqw); line-height: 1.3; }
+.credits a { color: #9db7a5; text-underline-offset: 2px; }
+progress {
+  position: absolute; left: 19.79%; top: 73.53%; width: 60.42%; height: 3.55%; min-height: 8px;
+  display: block; appearance: none; border: 1px solid var(--phosphor); border-radius: 0;
+  padding: 2px; background: transparent; color: var(--phosphor);
+}
+progress::-webkit-progress-bar { background: transparent; }
+progress::-webkit-progress-value { background: repeating-linear-gradient(90deg, var(--phosphor) 0 1.4cqw, transparent 1.4cqw 2cqw); }
+progress::-moz-progress-bar { background: repeating-linear-gradient(90deg, var(--phosphor) 0 1.4cqw, transparent 1.4cqw 2cqw); }
+progress:not([value]) { background: linear-gradient(90deg, transparent 0 38%, #bfd7c766 38% 62%, transparent 62%); background-size: 250% 100%; animation: searching 1.6s linear infinite; }
+.load-status { position: absolute; top: 80.9%; left: 8%; width: 84%; display: flex; justify-content: center; gap: 1ch; font-size: max(9px, 3cqw); line-height: 1.4; text-align: center; }
+#status { margin: 0; }
+#download-detail { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.actions { position: absolute; bottom: 15%; left: 14%; width: 72%; z-index: 4; }
+.primary { min-height: 44px; width: 100%; border: 1px solid var(--phosphor); border-radius: 0; color: #112019; background: var(--phosphor); font-size: max(11px, 3.5cqw); font-weight: 700; }
+.primary:hover { background: #e0f0e5; }
+#launch-hint { display: none; }
+#storage { position: fixed; bottom: max(14px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); margin: 0; padding: 10px 14px; font: 12px/1.5 system-ui, sans-serif; color: #e0c996; background: #102019f5; }
+#storage:empty { display: none; }
+body:is([data-state="error"], [data-state="ended"]) .crt { background: #0b1812; mix-blend-mode: normal; }
+body:is([data-state="error"], [data-state="ended"]) .crt-splash { opacity: .12; }
+body:is([data-state="error"], [data-state="ended"]) .load-status { display: block; top: 16%; max-height: 40%; overflow: auto; font-size: max(11px, 4cqw); }
+body:is([data-state="error"], [data-state="ended"]) #launch-hint { display: block; position: absolute; top: 57%; left: 8%; width: 84%; margin: 0; text-align: center; font-size: max(9px, 3cqw); }
+body[data-state="error"] #status { color: #f0c197; }
+#fullscreen { position: fixed; z-index: 1; top: max(16px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); opacity: 0; padding: 10px 16px; border: 1px solid #b8c89755; border-radius: 3px; color: #e1e8cf; background: #0a1613de; font-size: 12px; transition: opacity .25s; }
+body.controls-visible #fullscreen, body.needs-audio #fullscreen, #fullscreen:hover, #fullscreen:focus-visible { opacity: 1; }
+#notice { position: fixed; z-index: 3; bottom: max(24px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); display: flex; align-items: center; gap: 20px; padding: 14px 18px; color: #e7d3a0; background: #102019f5; border: 1px solid #83946b70; border-radius: 4px; box-shadow: 0 8px 30px #0005; font-size: 12px; line-height: 1.5; }
+#dismiss-notice { background: none; color: #e7d3a0; border: none; text-decoration: underline; text-underline-offset: 3px; font-size: 11px; }
+@keyframes searching { to { background-position: 167% 0; } }
+@media (max-aspect-ratio: 4 / 5) {
+  /* Crop the studio margins, not the computer. Screen coordinates stay unchanged. */
+  .mac-stage { width: min(260vw, 160svh); }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body data-state="loading">
+<canvas id="canvas" width="960" height="600" tabindex="0" aria-label="Cro-Mag Rally game"></canvas>
+<main id="launcher" aria-label="Cro-Mag Rally launcher">
+  <div class="mac-stage">
+    <img class="mac-render" src="web-assets/mac-background.webp" width="1600" height="1000" alt="A vintage Macintosh with keyboard and mouse" fetchpriority="high">
+    <section class="crt" aria-labelledby="game-title">
+      <h1 id="game-title" class="sr-only">Cro-Mag Rally</h1>
+      <img class="crt-splash" src="web-assets/cromagrally-splash.png" width="960" height="816" alt="" aria-hidden="true" fetchpriority="high">
+      <progress id="progress" aria-label="Downloading Cro-Mag Rally game assets" max="100"></progress>
+      <div class="load-status"><p id="status" role="status">Loading…</p><span id="download-detail"></span></div>
+      <div class="actions" id="actions" hidden><button class="primary" id="restart" hidden>Reload game</button></div>
+      <p id="launch-hint"></p>
+      <p class="copyright">© 2000 Pangea Software, Inc.</p>
+      <p class="credits"><a href="https://github.com/Rage997/CroMagRally" target="_blank" rel="noopener">Source code</a> · <a href="LICENSE.md" target="_blank" rel="noopener" title="CC BY-NC-SA 4.0">License</a></p>
+    </section>
+  </div>
+  <p id="storage" role="status"></p>
+</main>
+<button id="fullscreen" hidden>Fullscreen</button>
+<aside id="notice" hidden><span id="notice-text" role="status"></span><button id="dismiss-notice" aria-label="Dismiss notification">Dismiss</button></aside>
+<script>
+'use strict';
+const canvas = document.getElementById('canvas');
+const launcher = document.getElementById('launcher');
+const statusLine = document.getElementById('status');
+const storageLine = document.getElementById('storage');
+const progress = document.getElementById('progress');
+const downloadDetail = document.getElementById('download-detail');
+const launchHint = document.getElementById('launch-hint');
+const actions = document.getElementById('actions');
+const fullscreen = document.getElementById('fullscreen');
+const restart = document.getElementById('restart');
+const notice = document.getElementById('notice');
+let started = false;
+let failed = false;
+let ended = false;
+let storageAvailable = false;
+let syncing = false;
+let syncAgain = false;
+let controlsTimer;
+let noticeTimer;
+function showControls() {
+  if (!started || failed || ended) return;
+  const audio = Module['SDL3']?.audioContext;
+  const needsSound = !!audio && audio.state !== 'running';
+  fullscreen.hidden = !!document.fullscreenElement && !needsSound;
+  fullscreen.textContent = needsSound
+    ? (document.fullscreenElement ? 'Enable sound' : 'Enable sound & fullscreen')
+    : 'Fullscreen';
+  document.body.classList.toggle('needs-audio', needsSound);
+  document.body.classList.add('controls-visible');
+  clearTimeout(controlsTimer);
+  controlsTimer = setTimeout(() => document.body.classList.remove('controls-visible'), 2500);
+}
+function notify(message, temporary = false) {
+  clearTimeout(noticeTimer);
+  document.getElementById('notice-text').textContent = message;
+  notice.hidden = false;
+  if (temporary) noticeTimer = setTimeout(() => { notice.hidden = true; }, 6000);
+}
+function storageWarning(message) {
+  storageLine.textContent = message;
+  if (started && !ended) notify(message);
+}
+function showError(message) {
+  failed = true;
+  launcher.inert = false;
+  document.body.dataset.state = 'error';
+  statusLine.textContent = String(message);
+  actions.hidden = false;
+  fullscreen.hidden = true;
+  progress.hidden = true;
+  downloadDetail.textContent = '';
+  launchHint.textContent = 'Reload the game to try again.';
+  restart.textContent = 'Reload game';
+  restart.hidden = false;
+  notice.hidden = true;
+  restart.focus({preventScroll: true});
+}
+function persist() {
+  if (!storageAvailable) return;
+  if (syncing) { syncAgain = true; return; }
+  syncing = true;
+  Module.FS.syncfs(false, error => {
+    syncing = false;
+    if (error) storageWarning('Saving failed. Preferences and scores may not survive a reload.');
+    if (syncAgain) { syncAgain = false; persist(); }
+  });
+}
+function resizeCanvas() {
+  if (!started || failed || ended) return;
+  const size = canvas.getBoundingClientRect();
+  Module._WebResize(Math.round(size.width), Math.round(size.height));
+}
+function enterFullscreen() {
+  if (document.fullscreenElement) return;
+  // Fullscreen must be requested directly from the click, not after an await.
+  try {
+    if (!document.documentElement.requestFullscreen) throw new Error('Fullscreen unavailable');
+    const request = document.documentElement.requestFullscreen();
+    if (request) request.catch(() => {
+      if (!failed && !ended) notify('Fullscreen is unavailable. Playing in this window instead.', true);
+    });
+  } catch (_) {
+    notify('Fullscreen is unavailable. Playing in this window instead.', true);
+  }
+}
+var Module = {
+  canvas,
+  noInitialRun: true,
+  persist,
+  reportError: showError,
+  reportWarning(message) { notify(message); },
+  preRun: [function() {
+    if (!failed) statusLine.textContent = 'Preparing…';
+    const FS = Module.FS;
+    FS.mkdir('/storage');
+    FS.mkdir('/storage/cromagrally');
+    Module.addRunDependency('persistent-storage');
+    const unavailable = 'Persistent storage is unavailable. You can play, but settings and scores will not be saved.';
+    try {
+      FS.mount(Module.IDBFS, {}, '/storage/cromagrally');
+      FS.syncfs(true, error => {
+        if (error) {
+          FS.unmount('/storage/cromagrally');
+          storageWarning(unavailable);
+        } else {
+          storageAvailable = true;
+        }
+        Module.removeRunDependency('persistent-storage');
+      });
+    } catch (error) {
+      storageWarning(unavailable);
+      Module.removeRunDependency('persistent-storage');
+    }
+  }],
+  onRuntimeInitialized() {
+    if (failed) return;
+    progress.value = 100;
+    statusLine.textContent = 'Starting…';
+    downloadDetail.textContent = '100%';
+    requestAnimationFrame(startGame);
+  },
+  setStatus(text) {
+    if (failed || started || !text) return;
+    const download = text.match(/Downloading data.*\((\d+)\/(\d+)\)/);
+    if (download) {
+      const loaded = Number(download[1]), total = Number(download[2]);
+      if (total > 0) {
+        progress.value = Math.min(100, loaded / total * 100);
+        downloadDetail.textContent = `${Math.floor(progress.value)}%`;
+        statusLine.textContent = loaded >= total ? 'Preparing…' : 'Loading…';
+      }
+    }
+  },
+  print: console.log.bind(console),
+  printErr: console.error.bind(console),
+  onAbort(reason) { showError('The game could not continue: ' + reason); },
+  onExit() {
+    ended = true;
+    persist();
+    fullscreen.hidden = true;
+    if (failed) return;
+    launcher.inert = false;
+    document.body.dataset.state = 'ended';
+    statusLine.textContent = 'Thanks for playing Cro-Mag Rally.';
+    progress.hidden = true;
+    downloadDetail.textContent = '';
+    launchHint.textContent = 'Ready for another trip to the past?';
+    actions.hidden = false;
+    restart.textContent = 'Play again';
+    restart.hidden = false;
+    restart.focus({preventScroll: true});
+  }
+};
+function startGame() {
+  if (started || failed) return;
+  started = true;
+  document.body.dataset.state = 'launching';
+  canvas.focus({preventScroll: true});
+  try {
+    Module.callMain([]);
+    resizeCanvas();
+    // Let the original game paint before revealing it beneath the launcher.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (failed || ended) return;
+      launcher.inert = true;
+      document.body.dataset.state = 'playing';
+      canvas.focus({preventScroll: true});
+      Module['SDL3']?.audioContext?.addEventListener('statechange', showControls);
+      if (storageLine.textContent) notify(storageLine.textContent);
+      showControls();
+    }));
+  } catch (error) { showError(error.message || error); }
+}
+canvas.addEventListener('pointerdown', () => canvas.focus({preventScroll: true}));
+canvas.addEventListener('contextmenu', event => event.preventDefault());
+canvas.addEventListener('keydown', event => {
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(event.key)
+      || (event.key === 'Tab' && !event.shiftKey)) event.preventDefault();
+});
+canvas.addEventListener('webglcontextcreationerror', () => {
+  showError('WebGL2 is required. Enable hardware acceleration or try another browser.');
+});
+canvas.addEventListener('webglcontextlost', event => {
+  event.preventDefault();
+  if (started && !ended) Module._WebSuspend(1);
+  showError('The graphics context was lost. Restart the game to recover.');
+});
+fullscreen.addEventListener('click', () => {
+  const audio = Module['SDL3']?.audioContext;
+  if (audio && audio.state !== 'running') {
+    audio.resume().catch(() => notify('Sound could not start. Click Enable sound to try again.'));
+  }
+  enterFullscreen();
+  canvas.focus({preventScroll: true});
+});
+document.addEventListener('fullscreenchange', () => {
+  // SDL's fullscreen listener runs after ours and updates its cached window size.
+  requestAnimationFrame(resizeCanvas);
+  showControls();
+});
+document.addEventListener('pointermove', showControls);
+canvas.addEventListener('blur', () => { if (started && !ended) Module._WebClearInput(); });
+new ResizeObserver(resizeCanvas).observe(canvas);
+restart.addEventListener('click', () => location.reload());
+document.getElementById('dismiss-notice').addEventListener('click', () => {
+  notice.hidden = true;
+  if (started && !failed && !ended) canvas.focus({preventScroll: true});
+});
+window.addEventListener('error', event => showError(event.message || 'Failed to load the game.'));
+window.addEventListener('unhandledrejection', event => showError(String(event.reason)));
+document.addEventListener('visibilitychange', () => {
+  if (started && !failed && !ended) Module._WebSuspend(document.hidden ? 1 : 0);
+  if (document.hidden) persist();
+});
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>

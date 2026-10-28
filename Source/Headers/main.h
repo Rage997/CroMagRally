@@ -7,6 +7,9 @@
 #define	MAX_PLAYERS			6
 #define	MAX_LOCAL_PLAYERS	4
 
+// Screen steps return pending until their animation and cleanup have finished.
+enum { kScreenPending = -1, kScreenDone = 0, kScreenAborted = 1 };
+
 #define	GAME_FOV		1.1f
 
 #define	TRACK_COMPLETE_COOLDOWN_TIME	7.0f//5.0				// n seconds
@@ -106,6 +109,6 @@ enum
 
 void GameMain(void);
 void ToolBoxInit(void);
-void FadeOutArea(void);
+bool FadeOutArea(void);
 void MoveEverything(void);
 void InitDefaultPrefs(void);

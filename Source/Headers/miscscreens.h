@@ -2,33 +2,34 @@
 // miscscreens.h
 //
 
+#pragma once
+
 #include "menu.h"
 
 void DoWarmUpScreen(void);
-void DisplayPicture(const char* picturePath, float timeout);
-void DoPaused(void);
-void ShowAgePicture(int age);
-void ShowLoadingPicture(void);
+int DisplayPicture(const char* picturePath, float timeout);
+int DoPaused(void);
+int ShowAgePicture(int age);
 
-void DoMainMenuScreen(void);
+int DoMainMenuScreen(void);
 
-Boolean DoFailedMenu(const char* headerString);
-void DoTitleScreen(void);
-void DoAgeConqueredScreen(void);
+int DoFailedMenu(const char* headerString);
+int DoTitleScreen(void);
+int DoAgeConqueredScreen(void);
 
-Boolean DoCharacterSelectScreen(short whichPlayer, Boolean allowAborting);
-void DoCreditsScreen(void);
-void DoTournamentWinScreen(void);
+int DoCharacterSelectScreen(short whichPlayer, Boolean allowAborting);
+int DoCreditsScreen(void);
+int DoTournamentWinScreen(void);
 
-void DoHelpScreen(void);
-Boolean SelectSingleTrack(void);
+int DoHelpScreen(void);
+int SelectSingleTrack(void);
 
-Boolean DoMultiPlayerVehicleSelections(void);
-Boolean DoVehicleSelectScreen(short whichPlayer, Boolean allowAborting);
+int DoMultiPlayerVehicleSelections(void);
+int DoVehicleSelectScreen(short whichPlayer, Boolean allowAborting);
 
-Boolean DoLocalGatherScreen(void);
+int DoLocalGatherScreen(void);
 
-void DoPhysicsEditor(void);
+int DoPhysicsEditor(void);
 
 void RegisterSettingsMenu(const MenuItem* junk);
 

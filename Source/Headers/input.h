@@ -7,6 +7,7 @@
 #include "Pomme.h"
 #include "structs.h"
 
+void ClearInputStates(void);
 		/* NEEDS */
 
 #define MAX_USER_BINDINGS_PER_NEED		2

@@ -53,11 +53,15 @@ static void MoveCredit(ObjNode *theNode);
 // If showAndBail == true, then show it and bail out
 //
 
-void DisplayPicture(const char* picturePath, float timeout)
+int DisplayPicture(const char* picturePath, float timeout)
 {
-OGLSetupInputType	viewDef;
-bool				showAndBail = timeout <= 0;
-bool				doKeyText = timeout > 9;
+	static enum { Setup, Showing, Fading } state;
+	static float remaining;
+	if (state == Setup)
+	{
+		OGLSetupInputType viewDef;
+		bool doKeyText = timeout > 9;
+		remaining = timeout;
 
 
 			/* SETUP VIEW */
@@ -105,47 +109,31 @@ bool				doKeyText = timeout > 9;
 		/* SHOW IT */
 		/***********/
 
-	if (showAndBail)
-	{
-		int	i;
-
-		for (i = 0; i < 10; i++)
-			OGL_DrawScene(DrawObjects);
-
-		// TODO: Fade in, I guess?
-	}
-	else
-	{
 		MakeFadeEvent(true);
-		ReadKeyboard();
-		CalcFramesPerSecond();
-
-
-					/* MAIN LOOP */
-
-		while (timeout > 0)
-		{
-			CalcFramesPerSecond();
-			MoveObjects();
-			OGL_DrawScene(DrawObjects);
-
-			ReadKeyboard();
-			if (UserWantsOut())
-				break;
-
-			timeout -= gFramesPerSecondFrac;
-		}
-
-				/* FADE OUT */
-
-		OGL_FadeOutScene(DrawObjects, NULL);
+		ResetFrameTimer();
+		state = Showing;
 	}
+	if (state == Showing)
+	{
+		CalcFramesPerSecond();
+		ReadKeyboard();
+		MoveObjects();
+		OGL_DrawScene(DrawObjects);
+		remaining -= gFramesPerSecondFrac;
+		if (UserWantsOut() || remaining <= 0)
+			state = Fading;
+		return kScreenPending;
+	}
+	if (!OGL_FadeOutScene(DrawObjects, NULL))
+		return kScreenPending;
 
 			/* CLEANUP */
 
 	DeleteAllObjects();
 
 	OGL_DisposeGameView();
+	state = Setup;
+	return kScreenDone;
 }
 
 #pragma mark -
@@ -153,7 +141,7 @@ bool				doKeyText = timeout > 9;
 
 /********************* SHOW AGE PICTURE **********************/
 
-void ShowAgePicture(int age)
+int ShowAgePicture(int age)
 {
 static const char*	names[NUM_AGES] =
 {
@@ -162,21 +150,10 @@ static const char*	names[NUM_AGES] =
 	":Images:Ages:IronAgeIntro.jpg"
 };
 
-	DisplayPicture(names[age], 20);
+	return DisplayPicture(names[age], 20);
 }
 
 
-/********************* SHOW LOADING PICTURE **********************/
-
-void ShowLoadingPicture(void)
-{
-#if ENABLE_LOADING_SCREEN
-FSSpec	spec;
-
-	FSMakeFSSpec(gDataSpec.vRefNum, gDataSpec.parID, ":Images:Loading1.jpg", &spec);
-	DisplayPicture(&spec, -1);
-#endif
-}
 
 
 
@@ -185,10 +162,17 @@ FSSpec	spec;
 
 /********************** DO TITLE SCREEN ***********************/
 
-void DoTitleScreen(void)
+int DoTitleScreen(void)
 {
-	DisplayPicture(":Images:PangeaLogo.jpg", 4.0f);
-	DisplayPicture(":Images:TitleScreen.jpg", 5.0f);
+	static int picture;
+	int result = picture == 0 ? DisplayPicture(":Images:PangeaLogo.jpg", 4)
+		: DisplayPicture(":Images:TitleScreen.jpg", 5);
+	if (result == kScreenPending)
+		return kScreenPending;
+	if (++picture < 2)
+		return kScreenPending;
+	picture = 0;
+	return kScreenDone;
 }
 
 
@@ -230,42 +214,32 @@ void DoWarmUpScreen(void)
 
 /********************* DO AGE CONQUERED SCREEN **********************/
 
-void DoAgeConqueredScreen(void)
+int DoAgeConqueredScreen(void)
 {
-			/* SETUP */
-
-	SetupConqueredScreen();
-	MakeFadeEvent(true);
-
-				/*************/
-				/* MAIN LOOP */
-				/*************/
-
-	CalcFramesPerSecond();
-	ReadKeyboard();
-
-	while(true)
+	static enum { Setup, Showing, Fading } state;
+	if (state == Setup)
 	{
-			/* DRAW STUFF */
-
+		SetupConqueredScreen();
+		MakeFadeEvent(true);
+		ResetFrameTimer();
+		state = Showing;
+	}
+	if (state == Showing)
+	{
 		CalcFramesPerSecond();
 		ReadKeyboard();
 		MoveObjects();
 		MoveParticleGroups();
 		OGL_DrawScene(DrawObjects);
-
 		if (UserWantsOut())
-			break;
+			state = Fading;
+		return kScreenPending;
 	}
-
-			/* FADE OUT */
-
-	OGL_FadeOutScene(DrawObjects, MoveObjects);
-
-
-			/* CLEANUP */
-
+	if (!OGL_FadeOutScene(DrawObjects, MoveObjects))
+		return kScreenPending;
 	FreeConqueredScreen();
+	state = Setup;
+	return kScreenDone;
 }
 
 
@@ -409,44 +383,35 @@ static void MoveTotalTime(ObjNode* theNode)
 
 /********************* DO TOURNEMENT WIN SCREEN **********************/
 
-void DoTournamentWinScreen(void)
+int DoTournamentWinScreen(void)
 {
-float	timer = 0;
-
-			/* SETUP */
-
-	SetupWinScreen();
-	MakeFadeEvent(true);
-
-				/*************/
-				/* MAIN LOOP */
-				/*************/
-
-	CalcFramesPerSecond();
-	ReadKeyboard();
-
-	while(true)
+	static enum { Setup, Showing, Fading } state;
+	static float timer;
+	if (state == Setup)
 	{
-			/* DRAW STUFF */
-
+		SetupWinScreen();
+		MakeFadeEvent(true);
+		ResetFrameTimer();
+		timer = 0;
+		state = Showing;
+	}
+	if (state == Showing)
+	{
 		CalcFramesPerSecond();
 		ReadKeyboard();
 		MoveObjects();
 		MoveParticleGroups();
 		OGL_DrawScene(DrawObjects);
-
 		timer += gFramesPerSecondFrac;
-		if (timer > 13.0f && UserWantsOut())
-		{
-			break;
-		}
+		if (timer > 13 && UserWantsOut())
+			state = Fading;
+		return kScreenPending;
 	}
-
-
-			/* CLEANUP */
-
-	OGL_FadeOutScene(DrawObjects, MoveObjects);
+	if (!OGL_FadeOutScene(DrawObjects, MoveObjects))
+		return kScreenPending;
 	FreeWinScreen();
+	state = Setup;
+	return kScreenDone;
 }
 
 
@@ -689,47 +654,38 @@ OGLMatrix4x4			m,m3,m2;
 
 /********************** DO CREDITS SCREEN ***********************/
 
-void DoCreditsScreen(void)
+int DoCreditsScreen(void)
 {
-float	timer = 51.5f;
-
-			/* SETUP */
-
-	SetupCreditsScreen();
-	MakeFadeEvent(true);
-
-				/*************/
-				/* MAIN LOOP */
-				/*************/
-
-	CalcFramesPerSecond();
-	ReadKeyboard();
-
-	while (timer > 0)
+	static enum { Setup, Showing, Fading } state;
+	static float timer;
+	if (state == Setup)
 	{
-			/* DRAW STUFF */
-
+		SetupCreditsScreen();
+		MakeFadeEvent(true);
+		ResetFrameTimer();
+		timer = 51.5f;
+		state = Showing;
+	}
+	if (state == Showing)
+	{
 		CalcFramesPerSecond();
 		ReadKeyboard();
 		MoveObjects();
 		MoveParticleGroups();
 		OGL_DrawScene(DrawObjects);
-
-		if (UserWantsOut())
-			break;
-
 		timer -= gFramesPerSecondFrac;
+		if (UserWantsOut() || timer <= 0)
+			state = Fading;
+		return kScreenPending;
 	}
-
 	gGameView->fadeOutDuration = .5f;
-	OGL_FadeOutScene(DrawObjects, MoveObjects);
-
-
-			/* CLEANUP */
-
+	if (!OGL_FadeOutScene(DrawObjects, MoveObjects))
+		return kScreenPending;
 	DeleteAllObjects();
 	DisposeAllBG3DContainers();
 	OGL_DisposeGameView();
+	state = Setup;
+	return kScreenDone;
 }
 
 
@@ -928,8 +884,11 @@ static void MoveCredit(ObjNode *theNode)
 
 /************** DO HELP SCREEN *********************/
 
-void DoHelpScreen(void)
+int DoHelpScreen(void)
 {
+	static enum { Setup, Showing, Fading } state;
+	if (state == Setup)
+	{
 OGLSetupInputType	viewDef;
 OGLColorRGBA		ambientColor = { .5, .5, .5, 1 };
 OGLColorRGBA		fillColor1 = { 1.0, 1.0, 1.0, 1 };
@@ -1042,15 +1001,18 @@ OGLVector3D			fillDirection1 = { .9, -.3, -1 };
 			/* MAIN LOOP */
 			/*************/
 
-	CalcFramesPerSecond();
-	ReadKeyboard();
-
-	while (!UserWantsOut())
+		ResetFrameTimer();
+		state = Showing;
+	}
+	if (state == Showing)
 	{
 		CalcFramesPerSecond();
 		ReadKeyboard();
 		MoveObjects();
 		OGL_DrawScene(DrawObjects);
+		if (UserWantsOut())
+			state = Fading;
+		return kScreenPending;
 	}
 
 
@@ -1058,13 +1020,16 @@ OGLVector3D			fillDirection1 = { .9, -.3, -1 };
 			/* CLEANUP */
 			/***********/
 
-	OGL_FadeOutScene(DrawObjects, MoveObjects);
+	if (!OGL_FadeOutScene(DrawObjects, MoveObjects))
+		return kScreenPending;
 
 	DeleteAllObjects();
 	FreeAllSkeletonFiles(-1);
 	DisposeAllBG3DContainers();
 	DisposeSpriteGroup(SPRITE_GROUP_MAINMENU);
 	OGL_DisposeGameView();
+	state = Setup;
+	return kScreenDone;
 
 }
 

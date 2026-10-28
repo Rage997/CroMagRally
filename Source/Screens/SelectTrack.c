@@ -107,55 +107,36 @@ static Boolean IsSelectedTrackLocked(void)
 // Return true if user wants to back up a menu
 //
 
-Boolean SelectSingleTrack(void)
+int SelectSingleTrack(void)
 {
-	SetupTrackSelectScreen();
-	MakeFadeEvent(true);
-
-
-				/*************/
-				/* MAIN LOOP */
-				/*************/
-
-	CalcFramesPerSecond();
-	ReadKeyboard();
-
-	while(true)
+	static enum { Setup, Selecting, Fading } state;
+	if (state == Setup)
 	{
-			/* SEE IF MAKE SELECTION */
-
-		if (DoTrackSelectControls())
-			break;
-
-
-			/**************/
-			/* DRAW STUFF */
-			/**************/
-
+		SetupTrackSelectScreen();
+		MakeFadeEvent(true);
+		ResetFrameTimer();
+		state = Selecting;
+	}
+	if (state == Selecting)
+	{
 		CalcFramesPerSecond();
 		ReadKeyboard();
+		if (DoTrackSelectControls())
+			state = Fading;
 		MoveObjects();
 		OGL_DrawScene(DrawObjects);
+		return kScreenPending;
 	}
-
-
-			/***********/
-			/* CLEANUP */
-			/***********/
-
-	OGL_FadeOutScene(DrawObjects, NULL);
-
+	if (!OGL_FadeOutScene(DrawObjects, NULL))
+		return kScreenPending;
 	DeleteAllObjects();
 	DisposeSpriteGroup(SPRITE_GROUP_TRACKSELECTSCREEN);
 	OGL_DisposeGameView();
-
-	if (gSelectedTrackIndex == -1)								// see if bail
-		return(true);
-
-		/* CONVERT THE INDEX INTO A GLOGAL TRACK NUMBER */
-
-	gTrackNum = gBaseTrack + gSelectedTrackIndex;				// set global track # to play
-	return(false);
+	state = Setup;
+	if (gSelectedTrackIndex == -1)
+		return kScreenAborted;
+	gTrackNum = gBaseTrack + gSelectedTrackIndex;
+	return kScreenDone;
 }
 
 

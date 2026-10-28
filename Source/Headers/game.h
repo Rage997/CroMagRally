@@ -3,6 +3,9 @@
 #include <SDL3/SDL.h>
 #include <stddef.h>
 #include <stdbool.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 #include "version.h"
 #include "globals.h"

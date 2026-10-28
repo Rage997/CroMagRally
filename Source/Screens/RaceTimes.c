@@ -295,8 +295,12 @@ static const MenuItem gScoreboardMenuTree[] =
 	{0},
 };
 
-void DoScoreboardScreen(void)
+int DoScoreboardScreen(void)
 {
+	static bool active;
+	if (!active)
+	{
+		active = true;
 	GAME_ASSERT(gRecordChainHead == NULL);
 
 	int numRecordsToday = GetNumRecordsToday();
@@ -306,12 +310,14 @@ void DoScoreboardScreen(void)
 	}
 
 	SetupScoreboardScreen();
+	}
 
 	MenuStyle style = kDefaultMenuStyle;
 	style.yOffset = -170;
 	style.canBackOutOfRootMenu = true;
 
-	StartMenu(gScoreboardMenuTree, &style, MoveObjects, DrawObjects);
+	if (StartMenu(gScoreboardMenuTree, &style, MoveObjects, DrawObjects) == MENU_PENDING)
+		return kScreenPending;
 
 	DeleteAllObjects();
 	OGL_DisposeGameView();
@@ -319,6 +325,8 @@ void DoScoreboardScreen(void)
 	gRecordChainHead = NULL;
 
 	DisposeSpriteGroup(SPRITE_GROUP_SCOREBOARDSCREEN);
+	active = false;
+	return kScreenDone;
 }
 
 static void LayOutScoreboardForTrack(void)

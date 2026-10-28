@@ -27,6 +27,19 @@ Some of the new features include:
 
 I haven’t had time to restore NetSprockets multiplayer from the OS 9 version yet, but that may come in a later release.
 
+### Browser port
+
+**[Play Cro-Mag Rally in your browser](https://niccolozuppichini.com/CroMagRally/)**
+
+The browser build is a complementary option to the native macOS, Windows, and Linux versions.
+
+Play in a WebGL 2 browser with a keyboard or gamepad, including local split-screen.
+No touch controls or online multiplayer. The first download is about 155 MiB;
+settings and progress stay in your browser.
+
+See [build and hosting instructions](BUILD.md#browser-build-and-static-hosting).
+
+
 ### More documentation
 
 - [BUILD](BUILD.md) – How to build the game from source

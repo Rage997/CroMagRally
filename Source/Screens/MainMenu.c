@@ -199,107 +199,76 @@ static void UpdateMainMenuScreen(void)
 }
 
 
-void DoMainMenuScreen(void)
+int DoMainMenuScreen(void)
 {
-do_again:
-	SetupMainMenuScreen();
-
-
-
-				/*************/
-				/* MAIN LOOP */
-				/*************/
-
-	MenuStyle style = kDefaultMenuStyle;
-	style.yOffset = 16;
-
-	int outcome = StartMenu(gMainMenuTree, &style, UpdateMainMenuScreen, DrawObjects);
-
-			/* SAVE PREFS IF THEY CHANGED */
-
-	SavePrefs();
-
-			/* CLEANUP */
-
-	DeleteAllObjects();
-	OGL_DisposeGameView();
-
-
-			/* RUN NEXT SCREEN */
-
-	switch (outcome)
+	static enum { Setup, Menu, ExtraScreen, Track, Network } state;
+	static int outcome;
+	int result;
+	switch (state)
 	{
-		case MENU_EXITCODE_HELP:
-			DoHelpScreen();
-			goto do_again;
-
-		case MENU_EXITCODE_CREDITS:
-			DoCreditsScreen();
-			goto do_again;
-
-		case MENU_EXITCODE_SCOREBOARD:
-			DoScoreboardScreen();
-			goto do_again;
-
-		case MENU_EXITCODE_PHYSICS:
-			DoPhysicsEditor();
-			goto do_again;
-
+	case Setup:
+		SetupMainMenuScreen();
+		state = Menu;
+		// fall through
+	case Menu:
+	{
+		MenuStyle style = kDefaultMenuStyle;
+		style.yOffset = 16;
+		outcome = StartMenu(gMainMenuTree, &style, UpdateMainMenuScreen, DrawObjects);
+		if (outcome == MENU_PENDING)
+			return kScreenPending;
+		SavePrefs();
+		DeleteAllObjects();
+		OGL_DisposeGameView();
+		state = ExtraScreen;
+		return kScreenPending;
+	}
+	case ExtraScreen:
+		switch (outcome)
+		{
+		case MENU_EXITCODE_HELP: result = DoHelpScreen(); break;
+		case MENU_EXITCODE_CREDITS: result = DoCreditsScreen(); break;
+		case MENU_EXITCODE_SCOREBOARD: result = DoScoreboardScreen(); break;
+		case MENU_EXITCODE_PHYSICS: result = DoPhysicsEditor(); break;
 		case MENU_EXITCODE_SELFRUNDEMO:
 			PrimeSelfRunningDemo();
-			break;
-		
+			state = Track;
+			return kScreenPending;
 		case MENU_EXITCODE_QUITGAME:
 			CleanQuit();
-			break;
-	}
-
-		/******************************/
-		/* HANDLE GAME MODE SPECIFICS */
-		/******************************/
-
-	switch(gGameMode)
-	{
-			/* BATTLE MODE:  SELECT TRACK NOW */
-
-		case	GAME_MODE_MULTIPLAYERRACE:
-		case	GAME_MODE_TAG1:
-		case	GAME_MODE_TAG2:
-		case	GAME_MODE_SURVIVAL:
-		case	GAME_MODE_CAPTUREFLAG:
-				if (!gIsNetworkClient)				// clients dont select tracks since they get the info when they join
-				{
-					if (SelectSingleTrack())
-						goto do_again;
-				}
-				break;
-	}
-
-
-
-			/********************/
-			/* DO NETWORK SETUP */
-			/********************/
-			//
-			// Let's do this all now so that we can easily abort out and so we can transfer the
-			// necessary information about the game from the Host to the other players.
-			//
-
-	if (gNetGameInProgress)
-	{
-		if (gIsNetworkHost)
+		default:
+			state = Track;
+			return kScreenPending;
+		}
+		if (result != kScreenPending)
+			state = Setup;
+		return kScreenPending;
+	case Track:
+		if (gGameMode >= GAME_MODE_MULTIPLAYERRACE && !gIsNetworkClient)
 		{
-			if (SetupNetworkHosting())						// do hosting dialog and check for abort
-				goto do_again;
+			result = SelectSingleTrack();
+			if (result == kScreenPending)
+				return kScreenPending;
+			if (result == kScreenAborted)
+			{
+				state = Setup;
+				return kScreenPending;
+			}
+		}
+		state = Network;
+		// fall through
+	case Network:
+		state = Setup;
+		if (gNetGameInProgress)
+		{
+			if (gIsNetworkHost ? SetupNetworkHosting() : SetupNetworkJoin())
+				return kScreenPending;
 		}
 		else
-		{
-			if (SetupNetworkJoin())							// get joining info and check for abort
-				goto do_again;
-		}
+			gMyNetworkPlayerNum = 0;
+		return kScreenDone;
 	}
-	else
-		gMyNetworkPlayerNum = 0;
+	return kScreenPending;
 }
 
 

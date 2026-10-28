@@ -48,54 +48,35 @@ static ObjNode	*gCharacterArrow;
 // Return true if user aborts.
 //
 
-Boolean DoCharacterSelectScreen(short whichPlayer, Boolean allowAborting)
+int DoCharacterSelectScreen(short whichPlayer, Boolean allowAborting)
 {
-	SetupCharacterSelectScreen(whichPlayer);
-	MakeFadeEvent(true);
-
-
-				/*************/
-				/* MAIN LOOP */
-				/*************/
-
-	CalcFramesPerSecond();
-	ReadKeyboard();
-
-	while(true)
+	static enum { Setup, Selecting, Fading } state;
+	if (state == Setup)
 	{
-			/* SEE IF MAKE SELECTION */
-
-		if (DoCharacterSelectControls(whichPlayer, allowAborting))
-			break;
-
-
-			/**************/
-			/* DRAW STUFF */
-			/**************/
-
+		SetupCharacterSelectScreen(whichPlayer);
+		MakeFadeEvent(true);
+		ResetFrameTimer();
+		state = Selecting;
+	}
+	if (state == Selecting)
+	{
 		CalcFramesPerSecond();
 		ReadKeyboard();
+		if (DoCharacterSelectControls(whichPlayer, allowAborting))
+			state = Fading;
 		MoveObjects();
 		OGL_DrawScene(DrawObjects);
+		return kScreenPending;
 	}
-
-			/***********/
-			/* CLEANUP */
-			/***********/
-
-	OGL_FadeOutScene(DrawObjects, MoveObjects);
+	if (!OGL_FadeOutScene(DrawObjects, MoveObjects))
+		return kScreenPending;
 	FreeCharacterSelectArt();
 	OGL_DisposeGameView();
-
-	if (gSelectedCharacterIndex == -1)										// see if user bailed
-		return(true);
-
-
-		/* SET CHARACTER TYPE SELECTED */
-
+	state = Setup;
+	if (gSelectedCharacterIndex == -1)
+		return kScreenAborted;
 	gPlayerInfo[whichPlayer].sex = gSelectedCharacterIndex;
-
-	return(false);
+	return kScreenDone;
 }
 
 

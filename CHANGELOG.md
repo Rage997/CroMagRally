@@ -1,6 +1,7 @@
 # Cro-Mag Rally Changelog
 
 - **3.0.2 (NOT RELEASED YET)**
+    - Added a browser version.
     - Updated to SDL 3
     - Fix StonehengeMap search path on case-sensitive filesystems (#19)
     - **NOTE:** The Mac version now requires macOS 10.13.

@@ -32,6 +32,7 @@ long	gPrefsFolderDirID;
 uint32_t 	seed0 = 0, seed1 = 0, seed2 = 0;
 
 float	gFramesPerSecond, gFramesPerSecondFrac;
+static Uint64 gPreviousFrameTime;
 
 int		gNumPointers = 0;
 long	gRAMAlloced = 0;
@@ -56,7 +57,11 @@ void DoAlert(const char* format, ...)
 	va_end(args);
 
 	SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Game Alert: %s", message);
+#ifdef __EMSCRIPTEN__
+	EM_ASM({ Module['reportWarning'](UTF8ToString($0)); }, message);
+#else
 	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, GAME_FULL_NAME, message, NULL);
+#endif
 
 	Exit2D();
 }
@@ -75,7 +80,11 @@ void DoFatalAlert(const char* format, ...)
 	va_end(args);
 
 	SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Game Fatal Alert: %s", message);
-	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, GAME_FULL_NAME, message, NULL);//gSDLWindow);
+#ifdef __EMSCRIPTEN__
+	EM_ASM({ Module['reportError'](UTF8ToString($0)); }, message);
+#else
+	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, GAME_FULL_NAME, message, NULL);
+#endif
 
 	Exit2D();
 	CleanQuit();
@@ -385,18 +394,20 @@ long createdDirID;
 // This version uses UpTime() which is only available on PCI Macs.
 //
 
+void ResetFrameTimer(void)
+{
+	gPreviousFrameTime = SDL_GetTicksNS();
+	gFramesPerSecond = 60;
+	gFramesPerSecondFrac = 1.0f / 60;
+}
+
 void CalcFramesPerSecond(void)
 {
-static UnsignedWide time;
-UnsignedWide currTime;
-unsigned long deltaTime;
-
-	Microseconds(&currTime);
-	deltaTime = currTime.lo - time.lo;
-
-	gFramesPerSecond = 1000000.0f / deltaTime;
-
-	if (gFramesPerSecond < DEFAULT_FPS)			// (avoid divide by 0's later)
+	Uint64 now = SDL_GetTicksNS();
+	float elapsed = gPreviousFrameTime ? (now - gPreviousFrameTime) * 1e-9 : 1.0f / 60;
+	gPreviousFrameTime = now;
+	gFramesPerSecond = 1.0f / GAME_MAX(elapsed, 1e-6f);
+	if (gFramesPerSecond < DEFAULT_FPS)
 		gFramesPerSecond = DEFAULT_FPS;
 
 #if _DEBUG
@@ -406,7 +417,6 @@ unsigned long deltaTime;
 
 	gFramesPerSecondFrac = 1.0f/gFramesPerSecond;		// calc fractional for multiplication
 
-	time = currTime;	// reset for next time interval
 }
 
 

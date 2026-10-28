@@ -5,7 +5,14 @@
 #pragma once
 
 #include "main.h"
+#ifdef __EMSCRIPTEN__
+#define GL_GLEXT_PROTOTYPES 1
+#endif
 #include <SDL3/SDL_opengl.h>
+#ifdef __EMSCRIPTEN__
+#include <SDL3/SDL_opengl_glext.h>
+#include "webgl_compat.h"
+#endif
 
 #define MAX_SPLITSCREENS	MAX_LOCAL_PLAYERS
 #define MAX_VIEWPORTS		(1+MAX_SPLITSCREENS)
@@ -351,7 +358,14 @@ GLuint OGL_TextureMap_Load(void *imageMemory, int width, int height,
 GLuint OGL_TextureMap_LoadImageFile(const char* path, int* width, int* height);
 void OGL_FixColorGamma(OGLColorRGBA* color);
 GLenum _OGL_CheckError(const char* file, int line);
+#ifdef __EMSCRIPTEN__
+// Per-call glGetError is expensive on WebGL (it forces driver
+// synchronization). The checks cost ~27ms/frame in the web build,
+// so they are disabled there.
+#define OGL_CheckError() (0)
+#else
 #define OGL_CheckError() _OGL_CheckError(__FILE__, __LINE__)
+#endif
 
 void OGL_PushState(void);
 void OGL_PopState(void);

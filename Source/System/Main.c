@@ -21,18 +21,14 @@
 
 static void InitArea(void);
 static void CleanupLevel(void);
-static void PlayArea(void);
-static Boolean PlayGame(void);
-
-static Boolean PlayGame_MultiplayerRace(void);
-static Boolean PlayGame_Practice(void);
-static Boolean PlayGame_Tournament(void);
-static Boolean PlayGame_Tag(void);
-static Boolean PlayGame_Survival(void);
-static Boolean PlayGame_CaptureTheFlag(void);
+static bool PlayArea(void);
+static int PlayGame(void);
+static int PlayGame_LocalMultiplayer(void);
+static int PlayGame_Practice(void);
+static int PlayGame_Tournament(void);
 static void UpdateGameModeSpecifics(void);
 
-static void TallyTokens(void);
+static bool TallyTokens(void);
 
 
 /****************************/
@@ -177,67 +173,46 @@ void InitDefaultPrefs(void)
 //			network games.
 //
 
-static Boolean PlayGame(void)
+static int PlayGame(void)
 {
-	UnlockPlayerGamepadMapping();
-
-	if (gNetGameInProgress)
-		SetDefaultPhysics();								// set all physics to defaults for net game
-
-	if (!gIsSelfRunningDemo && gNumLocalPlayers > 1)
+	static enum { Setup, Gather, Playing } state;
+	if (state == Setup)
 	{
-		if (DoLocalGatherScreen())
-			return true;
-		LockPlayerGamepadMapping();
+		UnlockPlayerGamepadMapping();
+		if (gNetGameInProgress)
+			SetDefaultPhysics();
+		state = Gather;
 	}
-
-	bool bailed = false;
-
-	switch(gGameMode)
+	if (state == Gather)
 	{
-		case	GAME_MODE_PRACTICE:
-				bailed = PlayGame_Practice();
-				break;
-
-		case	GAME_MODE_TOURNAMENT:
-				bailed = PlayGame_Tournament();
-				break;
-
-		case	GAME_MODE_MULTIPLAYERRACE:
-				bailed = PlayGame_MultiplayerRace();
-				break;
-
-		case	GAME_MODE_TAG1:
-		case	GAME_MODE_TAG2:
-				bailed = PlayGame_Tag();
-				break;
-
-		case	GAME_MODE_SURVIVAL:
-				bailed = PlayGame_Survival();
-				break;
-
-		case	GAME_MODE_CAPTUREFLAG:
-				bailed = PlayGame_CaptureTheFlag();
-				break;
-
-		default:
-				DoFatalAlert("PlayGame: unknown game mode");
+		if (!gIsSelfRunningDemo && gNumLocalPlayers > 1)
+		{
+			int result = DoLocalGatherScreen();
+			if (result == kScreenPending)
+				return kScreenPending;
+			if (result == kScreenAborted)
+			{
+				state = Setup;
+				return result;
+			}
+			LockPlayerGamepadMapping();
+		}
+		state = Playing;
 	}
-
-
+	int result;
+	switch (gGameMode)
+	{
+	case GAME_MODE_PRACTICE: result = PlayGame_Practice(); break;
+	case GAME_MODE_TOURNAMENT: result = PlayGame_Tournament(); break;
+	default: result = PlayGame_LocalMultiplayer(); break;
+	}
+	if (result == kScreenPending)
+		return result;
 	UnlockPlayerGamepadMapping();
-
-
-	if (bailed)
-		return true;
-
-
-		/* UPDATE ANY SAVED PLAYER FILE THAT'S ACTIVE */
-
-	if (!gIsSelfRunningDemo)
+	state = Setup;
+	if (result == kScreenDone && !gIsSelfRunningDemo)
 		SavePlayerFile();
-
-	return(false);
+	return result;
 }
 
 
@@ -246,109 +221,69 @@ static Boolean PlayGame(void)
 // return true if user aborted before game started
 //
 
-static Boolean PlayGame_Practice(void)
+static int PlayGame_Practice(void)
 {
-	gMyNetworkPlayerNum = 0;								// no networking in practice mode
-
-
-
-			/***********************/
-			/* GAME INITIALIZATION */
-			/***********************/
-
-			/* SELECT THE PRACTICE TRACK */
-
-select_track:
-
-	if (gIsSelfRunningDemo)									// auto-pick if SRD
+	static enum { Track, Character, Vehicle, Load, Race, Fade } state;
+	int result;
+	switch (state)
 	{
-		switch (GetNumAgesCompleted())
+	case Track:
+		gMyNetworkPlayerNum = 0;
+		if (gIsSelfRunningDemo)
 		{
-			case	0:
-					gTrackNum = RandomRange(0,2);			// randomly pick tracks 0..2
-					break;
-
-			case	1:
-					gTrackNum = RandomRange(0,5);			// randomly pick tracks 0..5
-					break;
-
-			default:
-					gTrackNum = RandomRange(0,7);			// randomly pick tracks 0..7 (no atlantis!)
-					break;
+			int ages = GetNumAgesCompleted();
+			gTrackNum = RandomRange(0, ages == 0 ? 2 : ages == 1 ? 5 : 7);
 		}
-	}
-	else
-	{
-		if (SelectSingleTrack())
-			return(true);
-	}
-
-
-			/* SET PLAYER INFO */
-
-	InitPlayerInfo_Game();									// init player info for entire game
-
-
-			/* LET PLAYER(S) SELECT CHARACTERS & VECHICLES */
-			//
-			// Must do this after InitPlayer above!
-			//
-
-select_sex:
-	if (gIsSelfRunningDemo)									// auto-pick if SRD
-	{
-		gPlayerInfo[0].sex = MyRandomLong() & 1;
-
-		switch (GetNumAgesCompleted())
+		else
 		{
-			case	0:
-					gPlayerInfo[0].vehicleType = RandomRange(0, 5);
-					break;
-
-			case	1:
-					gPlayerInfo[0].vehicleType = RandomRange(0, 7);
-					break;
-
-			default:
-					gPlayerInfo[0].vehicleType = RandomRange(0, 9);
-					break;
+			result = SelectSingleTrack();
+			if (result != kScreenDone)
+				return result;
 		}
-		gAutoPilot = true;									// set auto-pilot so computer will play for us in SRD mode
-		gSelfRunningDemoTimer = 50.0f;						// set duration of SRD
+		InitPlayerInfo_Game();
+		state = Character;
+		return kScreenPending;
+	case Character:
+		if (gIsSelfRunningDemo)
+		{
+			int ages = GetNumAgesCompleted();
+			gPlayerInfo[0].sex = MyRandomLong() & 1;
+			gPlayerInfo[0].vehicleType = RandomRange(0, ages == 0 ? 5 : ages == 1 ? 7 : 9);
+			gAutoPilot = true;
+			gSelfRunningDemoTimer = 50;
+			state = Load;
+		}
+		else
+		{
+			result = DoCharacterSelectScreen(0, true);
+			if (result == kScreenPending)
+				return result;
+			state = result == kScreenAborted ? Track : Vehicle;
+		}
+		return kScreenPending;
+	case Vehicle:
+		result = DoVehicleSelectScreen(0, true);
+		if (result != kScreenPending)
+			state = result == kScreenAborted ? Character : Load;
+		return kScreenPending;
+	case Load:
+		InitArea();
+		state = Race;
+		return kScreenPending;
+	case Race:
+		if (PlayArea())
+			state = Fade;
+		return kScreenPending;
+	case Fade:
+		if (!FadeOutArea())
+			return kScreenPending;
+		CleanupLevel();
+		gAutoPilot = false;
+		gIsSelfRunningDemo = false;
+		state = Track;
+		return kScreenDone;
 	}
-	else
-	{
-		if (DoCharacterSelectScreen(0, true))					// determine sex
-			goto select_track;
-		if (DoVehicleSelectScreen(0, true))						// get vehicle for only player, player 0
-			goto select_sex;
-	}
-
-
-
-        /* LOAD ALL OF THE ART & STUFF */
-
-	if (!gNetGameInProgress)									// dont show intro if Net since we're already showing it
-		ShowLoadingPicture();									// show track intro screen
-
-	InitArea();
-
-
-		/***********/
-        /* PLAY IT */
-        /***********/
-
-	PlayArea();
-
-		/* CLEANUP LEVEL */
-
-	FadeOutArea();
-	CleanupLevel();
-
-	gAutoPilot = false;										// make sure we turn this off!!
-	gIsSelfRunningDemo = false;								// and disble SRD
-
-	return(false);
+	return kScreenPending;
 }
 
 
@@ -360,345 +295,175 @@ select_sex:
 // return true if user aborted before game started
 //
 
-static Boolean PlayGame_Tournament(void)
+static int PlayGame_Tournament(void)
 {
-Boolean	canAbort = true;									// player can abort only at beginning
-short	placeToWin,startStage;
-
-	if (gGamePrefs.difficulty <= DIFFICULTY_EASY)			// in easy mode, 3rd place will do
-		placeToWin = 2;
-	else
-		placeToWin = 0;
-
-
-			/* SET PLAYER INFO */
-
-	gMyNetworkPlayerNum = 0;								// this tournament mode is 1-player only
-	InitPlayerInfo_Game();									// init player info for entire game
-
-
-	if (DoCharacterSelectScreen(0, true))					// determine sex
-		return(true);
-
-			/*************************************************************************/
-			/* GO THRU EACH AGE, STARTING WITH THE ONE THE USER SELECTED IN THE MENU */
-			/*************************************************************************/
-
-	for (;gTheAge <= IRON_AGE; gTheAge++)
+	static enum { Setup, Character, Age, Vehicle, Load, Race, Tally, Failure, Progress, Fade, Conquered, Win } state;
+	static int stage, placeToWin;
+	static bool canAbort, objectiveCompleted, retry;
+	int result;
+	switch (state)
 	{
-		gNumRetriesRemaining = MAX_RETRIES;								// # retries for this age
-
-					/* SHOW THE AGE PICTURE */
-
-		ShowAgePicture(gTheAge);
-
-		if (GetNumAgesCompleted() >= NUM_AGES					// if won game, then start stage @ 0
-			|| gGamePrefs.difficulty >= DIFFICULTY_HARD			// always start @ stage 0 in hard modes
-			|| gTheAge < GetNumAgesCompleted())					// picked an age we've already completed, start @ stage 0
+	case Setup:
+		canAbort = true;
+		placeToWin = gGamePrefs.difficulty <= DIFFICULTY_EASY ? 2 : 0;
+		gMyNetworkPlayerNum = 0;
+		InitPlayerInfo_Game();
+		state = Character;
+		// fall through
+	case Character:
+		result = DoCharacterSelectScreen(0, true);
+		if (result == kScreenPending)
+			return result;
+		if (result == kScreenAborted)
 		{
-			startStage = 0;
+			state = Setup;
+			return result;
 		}
-		else													// if it's the age we're working on completing, start where we last were
+		state = Age;
+		return kScreenPending;
+	case Age:
+		if (ShowAgePicture(gTheAge) == kScreenPending)
+			return kScreenPending;
+		gNumRetriesRemaining = MAX_RETRIES;
+		stage = GetNumAgesCompleted() >= NUM_AGES || gGamePrefs.difficulty >= DIFFICULTY_HARD
+			|| gTheAge < GetNumAgesCompleted() ? 0 : GetNumStagesCompletedInAge();
+		gTrackNum = GetTrackNumFromAgeStage(gTheAge, stage);
+		state = Vehicle;
+		return kScreenPending;
+	case Vehicle:
+		result = DoVehicleSelectScreen(0, canAbort);
+		if (result == kScreenPending)
+			return result;
+		if (result == kScreenAborted)
 		{
-			startStage = GetNumStagesCompletedInAge();
+			state = Setup;
+			return result;
 		}
-
-				/* LET PLAYER SELECT CHARACTER AT START OF EACH AGE */
-
-		if (GetTrackNumFromAgeStage(gTheAge, startStage) == TRACK_NUM_ATLANTIS)
+		state = Load;
+		return kScreenPending;
+	case Load:
+		gTrackNum = GetTrackNumFromAgeStage(gTheAge, stage);
+		InitArea();
+		retry = false;
+		state = Race;
+		return kScreenPending;
+	case Race:
+		if (!PlayArea())
+			return kScreenPending;
+		objectiveCompleted = gPlayerInfo[0].place <= placeToWin
+			&& gTotalTokens >= MAX_TOKENS && gPlayerInfo[0].raceComplete;
+		state = gPlayerInfo[0].place <= placeToWin && gPlayerInfo[0].raceComplete ? Tally : Failure;
+		return kScreenPending;
+	case Tally:
+		if (TallyTokens())
+			state = Failure;
+		return kScreenPending;
+	case Failure:
+		if (!objectiveCompleted)
 		{
-			// No-op -- It's pointless to let the player pick a car if we're starting on
-			// Atlantis because it's the last level and it forces using the submarine.
-		}
-		else if (DoVehicleSelectScreen(0, canAbort))			// select vehicle for player #0
-		{
-			return true;										// user bailed from vehicle select
-		}
-
-					/*******************************/
-					/* PLAY EACH LEVEL OF THIS AGE */
-					/*******************************/
-
-		for (int tournamentStage = startStage; tournamentStage < TRACKS_PER_AGE; tournamentStage++)
-		{
-			gTrackNum = GetTrackNumFromAgeStage(gTheAge, tournamentStage);	// get global track # to play
-
-			ShowLoadingPicture();									// show track intro screen
-
-			InitArea();
-			PlayArea();
-
-			// Added variables to keep track of separate objectives
-			bool hasGoodPosition = (gPlayerInfo[0].place <= placeToWin);
-			bool hasAllTokens = (gTotalTokens >= MAX_TOKENS);
-			bool objectiveCompleted = hasGoodPosition && hasAllTokens && gPlayerInfo[0].raceComplete;
-
-			if (hasGoodPosition && gPlayerInfo[0].raceComplete)
+			if (gNumRetriesRemaining > 0)
 			{
-				TallyTokens(); // Only tally if finished and in high enough race position!
-			}
-
-					/* SEE IF DIDNT COME IN 1ST PLACE OR DIDNT GET ALL THE TOKENS */
-
-			if (!objectiveCompleted)
-			{
-				if (gNumRetriesRemaining > 0)										// see if there are any retries remaining
-				{
-					const char* s = Localize(STR_1_TRY_REMAINING + gNumRetriesRemaining - 1);
-
-					if (DoFailedMenu(s))												// returns true if want to retry
-					{
-						tournamentStage--;											// back up, so "next" will put us back here again
-						gNumRetriesRemaining--;
-					}
-					else															// otherwise, user wants to retire
-						gGameOver = true;
-				}
+				result = DoFailedMenu(Localize(STR_1_TRY_REMAINING + gNumRetriesRemaining - 1));
+				if (result == kScreenPending)
+					return kScreenPending;
+				retry = result != 0;
+				if (retry)
+					gNumRetriesRemaining--;
 				else
-					gGameOver = true;												// no retries, so bail
+					gGameOver = true;
 			}
-
-				/* IF JUST COMPLETED SOMETHING NEW THEN INC THE STAGE COUNTER */
-
-			if (objectiveCompleted
-				&& !gGameOver														// dont do anything if we failed or bailed
-				&& gTrackNum+1 > GetNumTracksCompletedTotal())						// only if it's better than current progress
-			{
-				SDL_memcpy(gGamePrefs.tournamentProgression.tournamentLapTimes[gTrackNum],
-					   gPlayerInfo->lapTimes,
-					   sizeof(gPlayerInfo->lapTimes));
-
-				SetPlayerProgression(gTrackNum+1);
-
-				SavePlayerFile();
-			}
-
-				/* CLEANUP TRACK */
-
-			FadeOutArea();
-			CleanupLevel();
-
-			if (gGameOver)													// see if its over
-				return(false);
+			else
+				gGameOver = true;
 		}
-
-			/* NEXT AGE */
-
-		DoAgeConqueredScreen();
-
-
+		state = Progress;
+		// fall through
+	case Progress:
+		if (objectiveCompleted && !gGameOver && gTrackNum + 1 > GetNumTracksCompletedTotal())
+		{
+			SDL_memcpy(gGamePrefs.tournamentProgression.tournamentLapTimes[gTrackNum],
+				gPlayerInfo->lapTimes, sizeof(gPlayerInfo->lapTimes));
+			SetPlayerProgression(gTrackNum + 1);
+			SavePlayerFile();
+		}
+		state = Fade;
+		return kScreenPending;
+	case Fade:
+		if (!FadeOutArea())
+			return kScreenPending;
+		CleanupLevel();
+		if (gGameOver)
+		{
+			state = Setup;
+			return kScreenDone;
+		}
+		if (!retry)
+			stage++;
+		state = stage < TRACKS_PER_AGE ? Load : Conquered;
+		return kScreenPending;
+	case Conquered:
+		if (DoAgeConqueredScreen() == kScreenPending)
+			return kScreenPending;
 		canAbort = false;
-	}																		// next age
-
-
-			/* WE WON!! */
-
-	DoTournamentWinScreen();
-
-
-	return(false);
+		state = ++gTheAge <= IRON_AGE ? Age : Win;
+		return kScreenPending;
+	case Win:
+		if (DoTournamentWinScreen() == kScreenPending)
+			return kScreenPending;
+		state = Setup;
+		return kScreenDone;
+	}
+	return kScreenPending;
 }
 
-/******************** PLAY GAME: MULTIPLAYER RACE ************************/
-//
-// Multiplayer racing can be a 2-player splitscreen or network.
-//
-// gTrackNum has already been set by the Host
-//
-// return true if user aborted before game started
-//
+/******************** LOCAL MULTIPLAYER MODES ************************/
 
-static Boolean PlayGame_MultiplayerRace(void)
+static int PlayGame_LocalMultiplayer(void)
 {
-			/* SET PLAYER INFO */
-
-	InitPlayerInfo_Game();											// init player info for entire game
-
-
-			/***********************/
-			/* GAME INITIALIZATION */
-			/***********************/
-
-			/* LET PLAYER(S) SELECT CHARACTERS */
-			//
-			// Must do this after InitPlayerInfo_Game above!
-			//
-
-	if (DoMultiPlayerVehicleSelections())
-		return true;
-
-
-			/* LOAD TRACK */
-
-	ShowLoadingPicture();									// show track intro screen
-	InitArea();
-
-			/* PLAY TRACK */
-
-	PlayArea();
-
-
-			/* CLEANUP LEVEL */
-
-	FadeOutArea();
-	CleanupLevel();
-
-	return false;
-}
-
-
-/******************** PLAY GAME: TAG ************************/
-//
-// Multiplayer tag can be a 2-player splitscreen or network.
-//
-// return true if user aborted before game started
-//
-
-static Boolean PlayGame_Tag(void)
-{
-
-			/* SET PLAYER INFO */
-
-	InitPlayerInfo_Game();											// init player info for entire game
-
-
-			/***********************/
-			/* GAME INITIALIZATION */
-			/***********************/
-
-			/* LET PLAYER(S) SELECT CHARACTERS */
-			//
-			// Must do this after InitPlayerInfo_Game above!
-			//
-
-	if (DoMultiPlayerVehicleSelections())
-		return true;
-
-
-			/* INIT TRACK */
-
-	ShowLoadingPicture();
-	InitArea();
-
-
-		/* PICK RANDOM PLAYER TO BE "IT" */
-
-	gNumPlayersEliminated = 0;
-	ChooseTaggedPlayer();											// MUST do this AFTER InitArea() since that's where the random seed gets reset
-	gWhoWasIt = gWhoIsIt;
-
-		/***********/
-        /* PLAY IT */
-        /***********/
-
-	PlayArea();
-
-
-		/* CLEANUP LEVEL */
-
-	FadeOutArea();
-	CleanupLevel();
-
-	return false;
-}
-
-
-/******************** PLAY GAME: SURVIVAL ************************/
-//
-// return true if user aborted before game started
-//
-
-static Boolean PlayGame_Survival(void)
-{
-
-			/* SET PLAYER INFO */
-
-	InitPlayerInfo_Game();											// init player info for entire game
-
-
-			/***********************/
-			/* GAME INITIALIZATION */
-			/***********************/
-
-			/* LET PLAYER(S) SELECT CHARACTERS */
-			//
-			// Must do this after InitPlayerInfo_Game above!
-			//
-
-	if (DoMultiPlayerVehicleSelections())
-		return true;
-
-
-			/* INIT TRACK */
-
-	ShowLoadingPicture();									// show intro screen
-	InitArea();
-	gNumPlayersEliminated = 0;
-
-
-		/***********/
-        /* PLAY IT */
-        /***********/
-
-	PlayArea();
-
-
-		/* CLEANUP LEVEL */
-
-	FadeOutArea();
-	CleanupLevel();
-
-	return false;
-}
-
-
-/******************** PLAY GAME: CAPTURE THE FLAG ************************/
-//
-// return true if user aborted before game started
-//
-
-static Boolean PlayGame_CaptureTheFlag(void)
-{
-
-			/* SET PLAYER INFO */
-
-	InitPlayerInfo_Game();											// init player info for entire game
-
-	gCapturedFlagCount[0] = 0;									// no flags captured yet
-	gCapturedFlagCount[1] = 0;
-
-			/***********************/
-			/* GAME INITIALIZATION */
-			/***********************/
-
-			/* LET PLAYER(S) SELECT CHARACTERS */
-			//
-			// Must do this after InitPlayerInfo_Game above!
-			//
-
-	if (DoMultiPlayerVehicleSelections())
-		return true;
-
-
-			/* INIT TRACK */
-
-	ShowLoadingPicture();									// show intro screen
-	InitArea();
-
-
-		/***********/
-        /* PLAY IT */
-        /***********/
-
-	PlayArea();
-
-
-		/* CLEANUP LEVEL */
-
-	FadeOutArea();
-	CleanupLevel();
-
-	return false;
+	static enum { Setup, Selection, Load, Race, Fade } state;
+	switch (state)
+	{
+	case Setup:
+		InitPlayerInfo_Game();
+		if (gGameMode == GAME_MODE_CAPTUREFLAG)
+			gCapturedFlagCount[0] = gCapturedFlagCount[1] = 0;
+		state = Selection;
+		// fall through
+	case Selection:
+	{
+		int result = DoMultiPlayerVehicleSelections();
+		if (result == kScreenPending)
+			return result;
+		if (result == kScreenAborted)
+		{
+			state = Setup;
+			return result;
+		}
+		state = Load;
+		return kScreenPending;
+	}
+	case Load:
+		InitArea();
+		if (gGameMode == GAME_MODE_SURVIVAL || gGameMode == GAME_MODE_TAG1 || gGameMode == GAME_MODE_TAG2)
+			gNumPlayersEliminated = 0;
+		if (gGameMode == GAME_MODE_TAG1 || gGameMode == GAME_MODE_TAG2)
+		{
+			ChooseTaggedPlayer();
+			gWhoWasIt = gWhoIsIt;
+		}
+		state = Race;
+		return kScreenPending;
+	case Race:
+		if (PlayArea())
+			state = Fade;
+		return kScreenPending;
+	case Fade:
+		if (!FadeOutArea())
+			return kScreenPending;
+		CleanupLevel();
+		state = Setup;
+		return kScreenDone;
+	}
+	return kScreenPending;
 }
 
 #pragma mark -
@@ -709,13 +474,22 @@ static Boolean PlayGame_CaptureTheFlag(void)
 // Called @ end of tournament game to do token tally effect
 //
 
-static void TallyTokens(void)
+static bool TallyTokens(void)
 {
-Byte	stage = 0;
-float	stageTimer;
-char	s[32];
-Boolean	done = false;
-ObjNode* bigArrowhead = NULL;
+	static bool active;
+	static Byte stage;
+	static float stageTimer;
+	static int tokensTallied;
+	static ObjNode *bigArrowhead, *counterText;
+	char s[32];
+	bool done = false;
+	if (!active)
+	{
+		active = true;
+		stage = 0;
+		stageTimer = 0;
+		tokensTallied = 0;
+		bigArrowhead = counterText = NULL;
 
 	if (gFinalPlaceObj)
 	{
@@ -723,14 +497,7 @@ ObjNode* bigArrowhead = NULL;
 		gFinalPlaceObj = nil;
 	}
 
-	stageTimer = 0;
-
-	int tokensTallied = 0;
-
-	ObjNode* counterText = NULL;
-
-	while(!done)
-	{
+	}
 			/************************/
 			/* SEE IF DO NEXT STAGE */
 			/************************/
@@ -874,9 +641,11 @@ ObjNode* bigArrowhead = NULL;
 		OGL_DrawScene(DrawTerrain);
 
 
-	}
 
 
+	if (done)
+		active = false;
+	return done;
 }
 
 
@@ -884,8 +653,20 @@ ObjNode* bigArrowhead = NULL;
 
 /**************** PLAY AREA ************************/
 
-static void PlayArea(void)
+static bool PlayArea(void)
 {
+	static enum { Setup, Racing, Paused } state;
+	if (state == Paused)
+	{
+		if (DoPaused() == kScreenPending)
+			return false;
+		state = Racing;
+		if (gGameOver)
+			goto complete;
+		return false;
+	}
+	if (state == Setup)
+	{
 	/* IF DOING NET GAME THEN WAIT FOR SYNC */
 	//
 	// Need to wait for other players to finish loading art and when
@@ -903,8 +684,7 @@ static void PlayArea(void)
 			/* PREP STUFF */
 
 	ReadKeyboard();
-	CalcFramesPerSecond();
-	CalcFramesPerSecond();
+	ResetFrameTimer();
 	gNoCarControls = true;									// no control when starting light is going
 	gDisableHiccupTimer = true;
 	gIsInGame = true;
@@ -915,7 +695,8 @@ static void PlayArea(void)
 
 	MakeFadeEvent(true);
 
-	while(true)
+		state = Racing;
+	}
 	{
 				/******************************************/
 				/* GET CONTROL INFORMATION FOR THIS FRAME */
@@ -1015,9 +796,10 @@ static void PlayArea(void)
 
 			/* SEE IF PAUSED */
 
-		if (GetNewNeedStateAnyP(kNeed_UIPause) || IsCmdQPressed())
+		if (!gIsSelfRunningDemo && (GetNewNeedStateAnyP(kNeed_UIPause) || IsCmdQPressed()))
 		{
-			DoPaused();
+			state = Paused;
+			return false;
 		}
 
 			/* CHECK CHEATS */
@@ -1048,13 +830,6 @@ static void PlayArea(void)
 		}
 
 
-			/* SEE IF PAUSED */
-
-		if (!gIsSelfRunningDemo)
-		{
-			if (GetNewNeedStateAnyP(kNeed_UIPause))
-				DoPaused();
-		}
 
 		if (!gIsNetworkClient)						// clients dont need to calc frame rate since its passed to them from host.
 			CalcFramesPerSecond();
@@ -1065,13 +840,13 @@ static void PlayArea(void)
 				/* SEE IF TRACK IS COMPLETED */
 
 		if (gGameOver)													// if we need immediate abort, then bail now
-			break;
+			goto complete;
 
 		if (gTrackCompleted)
 		{
 			gTrackCompletedCoolDownTimer -= gFramesPerSecondFrac;		// game is done, but wait for cool-down timer before bailing
 			if (gTrackCompletedCoolDownTimer <= 0.0f)
-				break;
+				goto complete;
 		}
 
 		gDisableHiccupTimer = false;									// reenable this after the 1st frame
@@ -1081,27 +856,32 @@ static void PlayArea(void)
 		if (gIsSelfRunningDemo)
 		{
 			if (UserWantsOut())											// stop SRD if any key is pressed
-				break;
+				goto complete;
 
 			gSelfRunningDemoTimer -= gFramesPerSecondFrac;
 			if (gSelfRunningDemoTimer <= 0.0f)							// or stop of timer runs out
 			{
-				break;
+				goto complete;
 			}
 		}
 	}
+	return false;
+
+complete:
+	state = Setup;
 
 	gIsInGame = false;
+	return true;
 }
 
 
-void FadeOutArea(void)
+bool FadeOutArea(void)
 {
 			/* FADE OUT */
 
 	gGameView->fadeSound = true;
 	gGameView->fadeOutDuration = .3f;
-	OGL_FadeOutScene(DrawTerrain, DoPlayerTerrainUpdate);		// need to keep supertiles alive
+	return OGL_FadeOutScene(DrawTerrain, DoPlayerTerrainUpdate);
 }
 
 /******************** MOVE EVERYTHING ************************/
@@ -1621,6 +1401,9 @@ short	i,t,winner;
 
 void GameMain(void)
 {
+	static enum { Boot, DirectRace, DirectFade, Warmup, Title, MenuStart, Menu, Playing } state;
+	if (state == Boot)
+	{
 				/**************/
 				/* BOOT STUFF */
 				/**************/
@@ -1667,10 +1450,28 @@ void GameMain(void)
 		}
 
 		InitArea();
-		PlayArea();
+		state = DirectRace;
+		return;
+	}
+	state = Warmup;
+	}
+	if (state == DirectRace)
+	{
+		if (PlayArea())
+			state = DirectFade;
+		return;
+	}
+	if (state == DirectFade)
+	{
+		if (!FadeOutArea())
+			return;
 		CleanupLevel();
 		gCommandLine.bootToTrack = 0;
+		state = Warmup;
+		return;
 	}
+	if (state == Warmup)
+	{
 
 	DoWarmUpScreen();
 	PreloadGameArt();
@@ -1679,21 +1480,27 @@ void GameMain(void)
 
 		/* SHOW TITLE SCREEN */
 
-	if (gDebugMode == 0)		// in debug mode, skip title
-	{
-		DoTitleScreen();
+		state = gDebugMode == 0 ? Title : MenuStart;
 	}
-
-
-		/* MAIN LOOP */
-
-	while(true)
+	if (state == Title)
+	{
+		if (DoTitleScreen() == kScreenPending)
+			return;
+		state = MenuStart;
+	}
+	if (state == MenuStart)
 	{
 		PlaySong(SONG_THEME, true);
-		DoMainMenuScreen();
-
-		PlayGame();
+		state = Menu;
 	}
+	if (state == Menu)
+	{
+		if (DoMainMenuScreen() != kScreenPending)
+			state = Playing;
+		return;
+	}
+	if (state == Playing && PlayGame() != kScreenPending)
+		state = MenuStart;
 }
 
 

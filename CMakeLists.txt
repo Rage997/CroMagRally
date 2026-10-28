@@ -60,6 +60,22 @@ add_compile_definitions(POMME_CASE_SENSITIVE_FSSPEC=1)
 # FIND SDL
 #------------------------------------------------------------------------------
 
+if(EMSCRIPTEN OR BUILD_SDL_FROM_SOURCE)
+	cmake_minimum_required(VERSION 3.24) # FetchContent's OVERRIDE_FIND_PACKAGE
+	include(FetchContent)
+endif()
+
+if(EMSCRIPTEN)
+	set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+	set(SDL_STATIC ON CACHE BOOL "" FORCE)
+	set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
+	set(SDL_TESTS OFF CACHE BOOL "" FORCE)
+	set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
+	FetchContent_Declare(SDL3
+		GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+		GIT_TAG 7f3ae3d57459e59943a4ecfefc8f6277ec6bf540) # release-3.2.28
+	FetchContent_MakeAvailable(SDL3)
+else()
 # If SDL3_DIR wasn't specified, discover if the user put some prebuilt SDL3
 # package in the 'extern' directory
 if(NOT DEFINED SDL3_DIR)
@@ -86,7 +102,10 @@ else()
 		set(SDL3_DIR "${CMAKE_SOURCE_DIR}/extern/SDL")
 	endif()
 	message("Building SDL3 from source: " ${SDL3_DIR})
-	add_subdirectory("${SDL3_DIR}" EXCLUDE_FROM_ALL)
+	FetchContent_Declare(SDL3 SOURCE_DIR "${SDL3_DIR}"
+		BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/SDL" OVERRIDE_FIND_PACKAGE)
+	FetchContent_MakeAvailable(SDL3)
+endif()
 endif()
 
 #------------------------------------------------------------------------------
@@ -95,7 +114,9 @@ endif()
 
 add_subdirectory(extern/Pomme)
 
-find_package(OpenGL REQUIRED)
+if(NOT EMSCRIPTEN)
+	find_package(OpenGL REQUIRED)
+endif()
 
 #------------------------------------------------------------------------------
 # EXECUTABLE TARGET
@@ -212,7 +233,31 @@ else()
 endif()
 
 # Link core dependencies
-target_link_libraries(${GAME_TARGET} PRIVATE Pomme OpenGL::GL)
+target_link_libraries(${GAME_TARGET} PRIVATE Pomme)
+if(EMSCRIPTEN)
+	set_target_properties(${GAME_TARGET} PROPERTIES SUFFIX ".html")
+	target_link_options(${GAME_TARGET} PRIVATE
+		-fexceptions
+		-sMIN_WEBGL_VERSION=2
+		-sMAX_WEBGL_VERSION=2
+		-sALLOW_MEMORY_GROWTH=1
+		-sSTACK_SIZE=1048576
+		-sEXIT_RUNTIME=0
+		"-sEXPORTED_RUNTIME_METHODS=['callMain','FS','IDBFS','addRunDependency','removeRunDependency']"
+		-lidbfs.js
+		"SHELL:--preload-file ${GAME_DATADIR}@/Data"
+		"SHELL:--shell-file ${CMAKE_SOURCE_DIR}/packaging/web.html")
+	set_property(TARGET ${GAME_TARGET} APPEND PROPERTY LINK_DEPENDS "${CMAKE_SOURCE_DIR}/packaging/web.html")
+	configure_file(packaging/io.jor.cromagrally.png CroMagRally.png COPYONLY)
+	configure_file(packaging/web-assets/mac-background.webp web-assets/mac-background.webp COPYONLY)
+	configure_file(packaging/web-assets/crt-mask.png web-assets/crt-mask.png COPYONLY)
+	configure_file(packaging/web-assets/cromagrally-splash.png web-assets/cromagrally-splash.png COPYONLY)
+	configure_file(LICENSE.md LICENSE.md COPYONLY)
+	configure_file(extern/Pomme/LICENSE.md Pomme-LICENSE.md COPYONLY)
+	configure_file("${sdl3_SOURCE_DIR}/LICENSE.txt" SDL-LICENSE.txt COPYONLY)
+else()
+	target_link_libraries(${GAME_TARGET} PRIVATE OpenGL::GL)
+endif()
 
 # Add required frameworks for KillMacMouseAcceleration
 if(APPLE)
@@ -285,8 +330,10 @@ else()
 	set(GAME_DATA_TARGET_LOCATION "$<TARGET_FILE_DIR:${GAME_TARGET}>/Data")
 endif()
 
+if(NOT EMSCRIPTEN)
 add_custom_command(TARGET ${GAME_TARGET} POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E copy_directory "${GAME_DATADIR}" "${GAME_DATA_TARGET_LOCATION}")
+endif()
 
 if(APPLE)
 	set(INFO_PLIST "${GAME_DATA_TARGET_LOCATION}/../Info.plist")

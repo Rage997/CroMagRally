@@ -140,9 +140,14 @@ static const MenuItem gPhysicsMenuTree[] =
 
 
 
-void DoPhysicsEditor(void)
+int DoPhysicsEditor(void)
 {
-	SetupPhysicsEditorScreen();
+	static bool active;
+	if (!active)
+	{
+		SetupPhysicsEditorScreen();
+		active = true;
+	}
 
 				/*************/
 				/* MAIN LOOP */
@@ -153,12 +158,15 @@ void DoPhysicsEditor(void)
 	MenuStyle physicsEditorMenuStyle = kDefaultMenuStyle;
 	physicsEditorMenuStyle.canBackOutOfRootMenu = true;
 
-	StartMenu(gPhysicsMenuTree, &physicsEditorMenuStyle, MoveObjects, DrawObjects);
+	if (StartMenu(gPhysicsMenuTree, &physicsEditorMenuStyle, MoveObjects, DrawObjects) == MENU_PENDING)
+		return kScreenPending;
 
 			/* CLEANUP */
 
 	DeleteAllObjects();
 	OGL_DisposeGameView();
+	active = false;
+	return kScreenDone;
 }
 
 

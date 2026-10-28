@@ -535,6 +535,10 @@ long				count;
 	count = payloadLength;
 	iErr = FSWrite(refNum, &count, payloadPtr);
 	FSClose(refNum);
+#ifdef __EMSCRIPTEN__
+	if (iErr == noErr)
+		EM_ASM({ Module['persist'](); });
+#endif
 
 	SDL_Log("Wrote %s", file.cName);
 

@@ -2000,8 +2000,8 @@ int StartMenu(
 		void (*update)(void),
 		void (*draw)(void))
 {
-//	int cursorStateBeforeMenu = SDL_ShowCursor(-1);
-//	SDL_ShowCursor(1);
+	if (!gNav)
+	{
 
 		/* INITIALIZE MENU STATE */
 
@@ -2030,10 +2030,11 @@ int StartMenu(
 
 		/* SHOW IN ANIMATED LOOP */
 
-	CalcFramesPerSecond();
-	ReadKeyboard();
+		ResetFrameTimer();
+		ReadKeyboard();
+	}
 
-	while (gNav->menuState != kMenuStateOff)
+	if (gNav->menuState != kMenuStateOff)
 	{
 		DoSDLMaintenance();
 
@@ -2116,6 +2117,7 @@ int StartMenu(
 			MoveObjects();
 
 		OGL_DrawScene(draw);
+		return MENU_PENDING;
 	}
 
 
@@ -2123,7 +2125,8 @@ int StartMenu(
 
 	if (gNav->style.fadeOutSceneOnExit)
 	{
-		OGL_FadeOutScene(draw, NULL);
+		if (!OGL_FadeOutScene(draw, NULL))
+			return MENU_PENDING;
 	}
 
 

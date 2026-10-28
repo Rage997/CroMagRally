@@ -69,61 +69,33 @@ static int		gNumVehiclesToChooseFrom;
 
 /******************* DO MULTIPLAYER VEHICLE SELECTIONS ********************/
 
-Boolean DoMultiPlayerVehicleSelections(void)
+int DoMultiPlayerVehicleSelections(void)
 {
-	if (gNetGameInProgress)
+	static int currentScreen;
+	int players = gNetGameInProgress ? 1 : gNumLocalPlayers;
+	gCurrentPlayerNum = gNetGameInProgress ? gMyNetworkPlayerNum : currentScreen / 2;
+	int result = currentScreen % 2 == 0
+		? DoCharacterSelectScreen(gCurrentPlayerNum, !gNetGameInProgress)
+		: DoVehicleSelectScreen(gCurrentPlayerNum, !gNetGameInProgress);
+	if (result == kScreenPending)
+		return kScreenPending;
+	if (result == kScreenAborted)
 	{
-		// TODO: We should allow bailing out of Character/Vehicle Select screens, even if we started a net game.
-		DoCharacterSelectScreen(gMyNetworkPlayerNum, false);		// get player's sex
-		DoVehicleSelectScreen(gMyNetworkPlayerNum, false);			// get this player's vehicle
-		PlayerBroadcastVehicleType();								// tell other net players about my type
-		GetVehicleSelectionFromNetPlayers();						// get types from other net players
-		return false;
+		if (currentScreen == 0)
+			return kScreenAborted;
+		currentScreen--;
 	}
 	else
+		currentScreen++;
+	if (currentScreen < players * 2)
+		return kScreenPending;
+	currentScreen = 0;
+	if (gNetGameInProgress)
 	{
-		short currentScreen = 0;
-		short screensPerPlayer = 2;
-		bool bailed;
-
-		while (currentScreen < screensPerPlayer * gNumLocalPlayers)
-		{
-			gCurrentPlayerNum = currentScreen / screensPerPlayer;
-			int screenToShow = currentScreen % screensPerPlayer;
-
-			switch (screenToShow)
-			{
-				case 0:
-					bailed = DoCharacterSelectScreen(gCurrentPlayerNum, true);
-					break;
-
-				case 1:
-					bailed = DoVehicleSelectScreen(gCurrentPlayerNum, true);
-					break;
-
-				default:
-					DoFatalAlert("Unknown MP prep screen %d", screenToShow);
-			}
-
-			if (bailed)
-			{
-				if (currentScreen == 0)
-				{
-					return true;	// bail
-				}
-				else
-				{
-					currentScreen--;
-				}
-			}
-			else
-			{
-				currentScreen++;
-			}
-		}
-
-		return false;
+		PlayerBroadcastVehicleType();
+		GetVehicleSelectionFromNetPlayers();
 	}
+	return kScreenDone;
 }
 
 
@@ -132,69 +104,47 @@ Boolean DoMultiPlayerVehicleSelections(void)
 // Return true if user aborts.
 //
 
-Boolean DoVehicleSelectScreen(short whichPlayer, Boolean allowAborting)
+int DoVehicleSelectScreen(short whichPlayer, Boolean allowAborting)
 {
-	if (gTrackNum == TRACK_NUM_ATLANTIS)		// dont select this on atlantis
-		return(false);
-
-	SetupVehicleSelectScreen(whichPlayer);
-	MakeFadeEvent(true);
-
-
-				/*************/
-				/* MAIN LOOP */
-				/*************/
-
-	CalcFramesPerSecond();
-	ReadKeyboard();
-
-	while(true)
+	static enum { Setup, Selecting, Fading } state;
+	if (state == Setup)
 	{
-			/* SEE IF MAKE SELECTION */
-
-		if (DoVehicleSelectControls(whichPlayer, allowAborting))
-			break;
-
-
-			/**************/
-			/* DRAW STUFF */
-			/**************/
-
+		if (gTrackNum == TRACK_NUM_ATLANTIS)
+			return kScreenDone;
+		SetupVehicleSelectScreen(whichPlayer);
+		MakeFadeEvent(true);
+		ResetFrameTimer();
+		state = Selecting;
+	}
+	if (state == Selecting)
+	{
 		CalcFramesPerSecond();
 		ReadKeyboard();
+		if (DoVehicleSelectControls(whichPlayer, allowAborting))
+		{
+			state = Fading;
+			if (gSelectedVehicleIndex != -1)
+			{
+				gGameView->fadePillarbox = true;
+				if (whichPlayer == gNumRealPlayers - 1)
+				{
+					gGameView->fadeSound = true;
+					gGameView->fadeOutDuration = .3f;
+				}
+			}
+		}
 		MoveObjects();
 		OGL_DrawScene(DrawObjects);
+		return kScreenPending;
 	}
-
-			/***********/
-			/* CLEANUP */
-			/***********/
-
-	bool bailed = gSelectedVehicleIndex == -1;								// see if user bailed
-
-	if (!bailed)
-	{
-		gGameView->fadePillarbox = true;
-
-		if (whichPlayer == gNumRealPlayers-1)
-		{
-			gGameView->fadeSound = true;
-			gGameView->fadeOutDuration = .3f;
-		}
-	}
-
-	OGL_FadeOutScene(DrawObjects, MoveObjects);
+	if (!OGL_FadeOutScene(DrawObjects, MoveObjects))
+		return kScreenPending;
 	FreeVehicleSelectArt();
-
-	if (bailed)
-		return(true);
-
-
-		/* SET VEHICLE TYPE SELECTED */
-
+	state = Setup;
+	if (gSelectedVehicleIndex == -1)
+		return kScreenAborted;
 	gPlayerInfo[whichPlayer].vehicleType = gSelectedVehicleIndex;
-
-	return(false);
+	return kScreenDone;
 }
 
 

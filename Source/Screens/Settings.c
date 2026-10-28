@@ -12,10 +12,12 @@ static void OnPickLanguage(const MenuItem* mi)
 	LoadLocalizedStrings(gGamePrefs.language);
 }
 
+#ifndef __EMSCRIPTEN__
 static void OnToggleFullscreen(const MenuItem* mi)
 {
 	SetFullscreenMode(true);
 }
+#endif
 
 static void OnAdjustMusicVolume(const MenuItem* mi)
 {
@@ -43,6 +45,7 @@ static void OnPickResetGamepadBindings(const MenuItem* mi)
 	LayoutCurrentMenuAgain();
 }
 
+#ifndef __EMSCRIPTEN__
 static const char* GetDisplayName(Byte value)
 {
 	static char textBuf[8];
@@ -95,13 +98,16 @@ static void OnChangeMSAA(const MenuItem* mi)
 
 	MakeTwitch(msaaWarning, kTwitchPreset_MenuSelect);
 }
+#endif
 
 const MenuItem gSettingsMenuTree[] =
 {
 	{.id='sett'},
 	{kMIPick, STR_CONTROLS, .next='ctrl'},
 	{kMIPick, STR_SOUND, .next='soun'},
+#ifndef __EMSCRIPTEN__
 	{kMIPick, STR_GRAPHICS, .next='graf'},
+#endif
 	{kMIPick, STR_LANGUAGE, .next='lang'},
 
 	{.id='ctrl'},
@@ -144,6 +150,7 @@ const MenuItem gSettingsMenuTree[] =
 		},
 	},
 
+#ifndef __EMSCRIPTEN__
 	{.id='graf'},
 	{
 		kMICycler1, STR_FULLSCREEN,
@@ -187,6 +194,7 @@ const MenuItem gSettingsMenuTree[] =
 	{kMISpacer, .customHeight=.5f },
 	{kMILabel, STR_FULLSCREEN_HINT, .customHeight=.5f },
 	{kMISpacer, .customHeight=.5f },
+#endif
 
 	{.id='lang'},
 	{kMIPick, STR_ENGLISH,	.id=LANGUAGE_ENGLISH,	.callback=OnPickLanguage,	.next='BACK'},

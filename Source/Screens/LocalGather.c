@@ -68,79 +68,42 @@ static void UpdateGatherPrompt(int numGamepadsMissing)
 // Return true if user aborts.
 //
 
-Boolean DoLocalGatherScreen(void)
+int DoLocalGatherScreen(void)
 {
-	gNumGamepadsMissing = gNumLocalPlayers;
-	UnlockPlayerGamepadMapping();
-
-	if (GetNumGamepads() >= gNumLocalPlayers)
+	static enum { Setup, Gathering, Fading } state;
+	static int outcome;
+	if (state == Setup)
 	{
-		// Skip gather screen if we already have enough gamepads
-		return false;
+		gNumGamepadsMissing = gNumLocalPlayers;
+		UnlockPlayerGamepadMapping();
+		if (GetNumGamepads() >= gNumLocalPlayers)
+			return kScreenDone;
+		SetupLocalGatherScreen();
+		MakeFadeEvent(true);
+		ResetFrameTimer();
+		state = Gathering;
 	}
-
-	SetupLocalGatherScreen();
-	MakeFadeEvent(true);
-
-
-				/*************/
-				/* MAIN LOOP */
-				/*************/
-
-	CalcFramesPerSecond();
-	ReadKeyboard();
-
-	int outcome = 0;
-
-	while (outcome == 0)
+	if (state == Gathering)
 	{
-			/* SEE IF MAKE SELECTION */
-
-		outcome = DoLocalGatherControls();
-
-
-		int numGamepads = GetNumGamepads();
-		
-		gNumGamepadsMissing = gNumLocalPlayers - numGamepads;
-		if (gNumGamepadsMissing < 0)
-			gNumGamepadsMissing = 0;
-
-		UpdateGatherPrompt(gNumGamepadsMissing);
-
-
-			/**************/
-			/* DRAW STUFF */
-			/**************/
-
 		CalcFramesPerSecond();
 		ReadKeyboard();
+		gNumGamepadsMissing = GAME_MAX(0, gNumLocalPlayers - GetNumGamepads());
+		outcome = DoLocalGatherControls();
+		UpdateGatherPrompt(outcome > 0 ? 0 : gNumGamepadsMissing);
 		MoveObjects();
 		OGL_DrawScene(DrawObjects);
+		if (outcome != 0)
+			state = Fading;
+		return kScreenPending;
 	}
-
-			/* SHOW 'OK!' */
-
-	if (outcome >= 0)
-	{
-		UpdateGatherPrompt(0);
-	}
-
-
-			/***********/
-			/* CLEANUP */
-			/***********/
-
-	OGL_FadeOutScene(DrawObjects, MoveObjects);
-
+	if (!OGL_FadeOutScene(DrawObjects, MoveObjects))
+		return kScreenPending;
 	DeleteAllObjects();
 	FreeAllSkeletonFiles(-1);
 	DisposeAllBG3DContainers();
 	OGL_DisposeGameView();
-
-
-		/* SET CHARACTER TYPE SELECTED */
-
-	return (outcome < 0);
+	state = Setup;
+	return outcome < 0 ? kScreenAborted : kScreenDone;
 }
 
 

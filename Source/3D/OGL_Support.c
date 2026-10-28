@@ -360,6 +360,9 @@ static void OGL_CreateDrawContext(void)
 
 	bool didMakeCurrent = SDL_GL_MakeCurrent(gSDLWindow, gAGLContext);
 	GAME_ASSERT_MESSAGE(didMakeCurrent, SDL_GetError());
+#ifdef __EMSCRIPTEN__
+	WebGL_Init();
+#endif
 
 
 #if 0
@@ -380,6 +383,9 @@ static void OGL_DisposeDrawContext(void)
 {
 	if (!gAGLContext)
 		return;
+#ifdef __EMSCRIPTEN__
+	WebGL_Shutdown();
+#endif
 
 	SDL_GL_MakeCurrent(gSDLWindow, NULL);		// make context not current
 	SDL_GL_DestroyContext(gAGLContext);			// nuke context
@@ -1042,8 +1048,9 @@ void OGL_Texture_SetOpenGLTexture(GLuint textureName)
 		DoFatalAlert("OGL_Texture_SetOpenGLTexture: glBindTexture failed!");
 
 
+#ifndef __EMSCRIPTEN__
 	glGetError();
-
+#endif
 	glEnable(GL_TEXTURE_2D);
 }
 

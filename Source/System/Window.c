@@ -178,52 +178,38 @@ float	fps = gFramesPerSecondFrac;
 
 /***************** FREEZE-FRAME FADE OUT ********************/
 
-void OGL_FadeOutScene(void (*drawCall)(void), void (*moveCall)(void))
+bool OGL_FadeOutScene(void (*drawCall)(void), void (*moveCall)(void))
 {
+	static ObjNode* fader;
 	if (gDebugMode)
 	{
+		fader = NULL;
 		gGammaFadePercent = 0;
-		return;
+		return true;
 	}
-
-	ObjNode* fader = MakeFadeEvent(false);
-	FaderData* faderData = GetSpecialData(fader, FaderData);
-
-	long pFaderFrameCount = faderData->frameCounter;
-
-	while (!faderData->done)
-	{
-		CalcFramesPerSecond();
-		DoSDLMaintenance();
-
-		if (moveCall)
-		{
-			moveCall();
-		}
-
-		// Force fader object to move even if MoveObjects was skipped
-		if (faderData->frameCounter == pFaderFrameCount)	// fader wasn't moved by moveCall
-		{
-			MoveFadeEvent(fader);
-			pFaderFrameCount = faderData->frameCounter;
-		}
-
-		OGL_DrawScene(drawCall);
-	}
-
-	// Draw one more blank frame
-	gGammaFadePercent = 0;
+	if (!fader)
+		fader = MakeFadeEvent(false);
+	FaderData* data = GetSpecialData(fader, FaderData);
+	long frame = data->frameCounter;
 	CalcFramesPerSecond();
 	DoSDLMaintenance();
+	if (moveCall)
+		moveCall();
+	if (data->frameCounter == frame)
+		MoveFadeEvent(fader);
 	OGL_DrawScene(drawCall);
-
+	if (!data->done)
+		return false;
+	fader = NULL;
+	gGammaFadePercent = 0;
 	if (gGameView->fadeSound)
 	{
 		FadeSound(0);
 		KillSong();
 		StopAllEffectChannels();
-		FadeSound(1);		// restore sound volume for new playback
+		FadeSound(1);
 	}
+	return true;
 }
 
 
@@ -310,6 +296,11 @@ void MoveToPreferredDisplay(void)
 
 void SetFullscreenMode(bool enforceDisplayPref)
 {
+#ifdef __EMSCRIPTEN__
+	(void) enforceDisplayPref;
+	gGamePrefs.fullscreen = (SDL_GetWindowFlags(gSDLWindow) & SDL_WINDOW_FULLSCREEN) != 0;
+	return;
+#else
 	if (!gGamePrefs.fullscreen)
 	{
 		SDL_SetWindowFullscreen(gSDLWindow, 0);
@@ -346,4 +337,5 @@ void SetFullscreenMode(bool enforceDisplayPref)
 	else
 		SDL_ShowCursor();
 	//SDL_GL_SetSwapInterval(gGamePrefs.vsync);
+#endif
 }

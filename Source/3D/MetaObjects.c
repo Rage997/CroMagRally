@@ -675,7 +675,11 @@ use_current:
 
 
 //	glLockArraysEXT(0, data->numPoints);
+#ifdef __EMSCRIPTEN__
+	WebGL_DrawTriangles(data->numPoints, data->numTriangles * 3, data->triangles);
+#else
 	glDrawElements(GL_TRIANGLES,data->numTriangles*3,GL_UNSIGNED_INT,&data->triangles[0]);
+#endif
 	if (OGL_CheckError())
 		DoFatalAlert("MO_DrawGeometry_VertexArray: glDrawElements");
 //	glUnlockArraysEXT();

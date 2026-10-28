@@ -10,7 +10,9 @@ cd CroMagRally
 python3 build.py
 ```
 
-If you want to build the game **manually** instead, the rest of this document describes how to do just that on each of the big 3 desktop operating systems.
+If you want to build the game **manually** instead, the following sections describe how to do just that on each of the big 3 desktop operating systems.
+
+Building SDL from source with `BUILD_SDL_FROM_SOURCE=ON` requires CMake 3.24+.
 
 ## How to build the game manually on macOS
 
@@ -73,3 +75,48 @@ If you want to build the game **manually** instead, the rest of this document de
     ```
     If you'd like to enable runtime sanitizers, append `-DSANITIZE=1` to the **first** `cmake` call above.
 1. The game gets built in `build/CroMagRally`. Enjoy!
+
+## Browser build and static hosting
+
+The web build complements the native desktop builds described above.
+
+Requires CMake 3.24+, Git, Python 3, and an activated [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html) (tested with 6.0.13). Run from the repository root:
+
+```sh
+git submodule sync
+git submodule update --init --recursive
+emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release
+cmake --build build-web --parallel
+python3 -m http.server 8000 --directory build-web
+```
+
+Open <http://localhost:8000/CroMagRally.html>. Opening the HTML directly with `file://` does not work.
+
+The game starts after loading. CMake fetches SDL 3.2.28; the pinned
+[Pomme fork](https://github.com/Rage997/Pomme) reuses that SDL target.
+To use a local SDL checkout, add `-DFETCHCONTENT_SOURCE_DIR_SDL3=/path/to/SDL`.
+
+The launcher is `packaging/web.html`; artwork is in `packaging/web-assets/`.
+Blender is not needed to build.
+
+Publish these files together on an HTTPS static host:
+
+- `CroMagRally.html` (the entry point)
+- `CroMagRally.js`, `CroMagRally.wasm`, `CroMagRally.data`
+- `CroMagRally.png` and the complete `web-assets/` directory
+- `LICENSE.md`, `Pomme-LICENSE.md`, `SDL-LICENSE.txt`
+
+Serve `.wasm` as `application/wasm` and keep the files together. You may rename
+`CroMagRally.html` to `index.html`. No backend or cross-origin isolation is needed.
+Keep the credits and noncommercial/share-alike licenses.
+
+The asset bundle is about **155 MiB** uncompressed. Check the host's file-size
+limit and enable compression.
+
+### Browser runtime
+
+- Requires WebAssembly, WebGL 2, and a keyboard or gamepad. No touch controls are supported.
+- **Arrows** and **Enter** navigate; **Escape** goes back or pauses. Controls are configurable.
+- Preferences, progress, and scores stay in this browser. Clearing site data deletes them; unavailable storage allows play without saving.
+- Use the page's fullscreen/sound control when prompted. Hiding the tab pauses the game; graphics context loss requires a reload.
+

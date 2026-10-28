@@ -3,6 +3,7 @@
 #include "localization.h"
 
 #define MAX_MENU_CYCLER_CHOICES		12
+#define MENU_PENDING INT32_MIN
 
 typedef enum
 {

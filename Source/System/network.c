@@ -1298,7 +1298,6 @@ void GetVehicleSelectionFromNetPlayers(void)
 #if 0
 short	playerNum, charType, count, sex;
 
-	ShowLoadingPicture();													// show something while we wait
 
 	count = 1;																// start count @ 1 since we have our own local info already
 

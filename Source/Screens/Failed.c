@@ -49,9 +49,12 @@ static void UpdateFailedMenu(void)
 // return true if try again
 //
 
-Boolean DoFailedMenu(const char* headerString)
+int DoFailedMenu(const char* headerString)
 {
+	static bool active;
+	if (!active)
 	{
+		active = true;
 		NewObjectDefinitionType def =
 		{
 			.coord 		= {0, 144, 0},
@@ -87,6 +90,9 @@ Boolean DoFailedMenu(const char* headerString)
 	gNoCarControls = true;									// nobody has control during this
 
 	int outcome = StartMenu(failedMenu, &failedMenuStyle, UpdateFailedMenu, DrawTerrain);
+	if (outcome == MENU_PENDING)
+		return kScreenPending;
+	active = false;
 
 
 			/***************************/
