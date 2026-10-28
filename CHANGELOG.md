@@ -2,6 +2,7 @@
 
 - **3.0.2 (NOT RELEASED YET)**
     - Added a browser version.
+    - Added automatic web builds and GitHub Pages deployment from `master`.
     - Updated to SDL 3
     - Fix StonehengeMap search path on case-sensitive filesystems (#19)
     - **NOTE:** The Mac version now requires macOS 10.13.
