@@ -181,6 +181,9 @@ void DisposeFences(void)
 
 	for (int i = 0; i < gNumFences; i++)
 	{
+#ifdef __EMSCRIPTEN__
+		WebGL_ForgetMesh(&gFenceTriMeshData[i]);
+#endif
 		if (gFenceList[i].sectionVectors)
 			SafeDisposePtr((Ptr)gFenceList[i].sectionVectors);			// nuke section vectors
 		gFenceList[i].sectionVectors = nil;
@@ -358,6 +361,9 @@ float					minX,minY,minZ,maxX,maxY,maxZ;
 
 	for (int f = 0; f < gNumFences; f++)
 	{
+#ifdef __EMSCRIPTEN__
+		WebGL_InvalidateMesh(&gFenceTriMeshData[f], WEBGL_DIRTY_ALL);
+#endif
 				/******************/
 				/* GET FENCE INFO */
 				/******************/
@@ -616,6 +622,9 @@ OGLPoint3D				*nubs;
 		gFenceTriMeshData[f].materials[0] = gFenceMaterials[FENCE_TYPE_SEAWEED + gSeaweedFrame];	// set illegal temporary ref to material
 	}
 
+#ifdef __EMSCRIPTEN__
+	WebGL_InvalidateMesh(&gFenceTriMeshData[f], WEBGL_DIRTY_COLOR);
+#endif
 	MO_DrawGeometry_VertexArray(&gFenceTriMeshData[f]);
 }
 

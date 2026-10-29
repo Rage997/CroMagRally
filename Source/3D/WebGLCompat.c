@@ -25,6 +25,67 @@ typedef struct
 	GLuint name;
 	size_t capacity;
 } Buffer;
+typedef struct MeshBufferCache
+{
+	const void *key;
+	struct MeshBufferCache *next;
+	Buffer buffers[ATTRIBUTE_COUNT + 1];
+	const void *sources[ATTRIBUTE_COUNT + 1];
+	size_t lengths[ATTRIBUTE_COUNT + 1];
+	GLint components[ATTRIBUTE_COUNT];
+	GLenum types[ATTRIBUTE_COUNT];
+	unsigned dirty;
+	bool wireframe;
+} MeshBufferCache;
+#define MESH_BUCKETS 1024
+static MeshBufferCache *meshBuckets[MESH_BUCKETS];
+
+static unsigned MeshBucket(const void *key)
+{
+	uintptr_t value = (uintptr_t)key;
+	return ((value >> 4) ^ (value >> 14)) & (MESH_BUCKETS - 1);
+}
+static MeshBufferCache *FindMesh(const void *key, bool create)
+{
+	unsigned bucket = MeshBucket(key);
+	for (MeshBufferCache *mesh = meshBuckets[bucket]; mesh; mesh = mesh->next)
+		if (mesh->key == key)
+			return mesh;
+	if (!create)
+		return NULL;
+	MeshBufferCache *mesh = calloc(1, sizeof(*mesh));
+	GAME_ASSERT(mesh);
+	mesh->key = key;
+	mesh->dirty = WEBGL_DIRTY_ALL;
+	mesh->next = meshBuckets[bucket];
+	meshBuckets[bucket] = mesh;
+	return mesh;
+}
+void WebGL_InvalidateMesh(const void *key, unsigned mask)
+{
+	MeshBufferCache *mesh = FindMesh(key, false);
+	if (mesh)
+		mesh->dirty |= mask;
+}
+void WebGL_ForgetMesh(const void *key)
+{
+	MeshBufferCache **link = &meshBuckets[MeshBucket(key)];
+	while (*link)
+	{
+		MeshBufferCache *mesh = *link;
+		if (mesh->key != key)
+		{
+			link = &mesh->next;
+			continue;
+		}
+		*link = mesh->next;
+		for (int i = 0; i <= ATTRIBUTE_COUNT; i++)
+			if (mesh->buffers[i].name)
+				glDeleteBuffers(1, &mesh->buffers[i].name);
+		free(mesh);
+		return;
+	}
+}
 typedef struct
 {
 	GLfloat position[3], color[4], uv[2];
@@ -51,7 +112,7 @@ static size_t indexCapacity, quadCount;
 static unsigned char *convertedPixels;
 static size_t pixelCapacity;
 static GLuint program, vao, whiteTexture;
-static Buffer attributes[ATTRIBUTE_COUNT], elementBuffer, immediateBuffer, quadBuffer;
+static Buffer immediateBuffer, quadBuffer;
 static bool dirty = true;
 static struct
 {
@@ -171,9 +232,6 @@ void WebGL_Init(void)
 	glUniform1i(glGetUniformLocation(program, "image"), 0);
 	glGenVertexArrays(1, &vao);
 	glBindVertexArray(vao);
-	for (int i = 0; i < ATTRIBUTE_COUNT; i++)
-		glGenBuffers(1, &attributes[i].name);
-	glGenBuffers(1, &elementBuffer.name);
 	glGenBuffers(1, &immediateBuffer.name);
 	glGenBuffers(1, &quadBuffer.name);
 	// The sampler must be complete even for untextured draws.
@@ -188,9 +246,9 @@ void WebGL_Init(void)
 }
 void WebGL_Shutdown(void)
 {
-	for (int i = 0; i < ATTRIBUTE_COUNT; i++)
-		glDeleteBuffers(1, &attributes[i].name);
-	glDeleteBuffers(1, &elementBuffer.name);
+	for (unsigned bucket = 0; bucket < MESH_BUCKETS; bucket++)
+		while (meshBuckets[bucket])
+			WebGL_ForgetMesh(meshBuckets[bucket]->key);
 	glDeleteBuffers(1, &immediateBuffer.name);
 	glDeleteBuffers(1, &quadBuffer.name);
 	glDeleteVertexArrays(1, &vao);
@@ -555,6 +613,30 @@ static void Upload(Buffer *buffer, GLenum target, const void *data, size_t bytes
 	}
 	glBufferSubData(target, 0, bytes, data);
 }
+static bool NeedsUpload(const MeshBufferCache *mesh, unsigned slot, const void *source, size_t bytes)
+{
+	return (mesh->dirty & (1u << slot)) || mesh->sources[slot] != source || mesh->lengths[slot] != bytes;
+}
+static void BindMeshBuffer(MeshBufferCache *mesh, unsigned slot, GLenum target,
+						  const void *source, const void *contents, size_t bytes)
+{
+	Buffer *buffer = &mesh->buffers[slot];
+	if (!buffer->name)
+		glGenBuffers(1, &buffer->name);
+	glBindBuffer(target, buffer->name);
+	if (!NeedsUpload(mesh, slot, source, bytes))
+		return;
+	if (bytes > buffer->capacity)
+	{
+		size_t capacity = GAME_MAX(bytes, buffer->capacity * 2);
+		glBufferData(target, capacity, NULL, GL_DYNAMIC_DRAW);
+		buffer->capacity = capacity;
+	}
+	glBufferSubData(target, 0, bytes, contents);
+	mesh->sources[slot] = source;
+	mesh->lengths[slot] = bytes;
+	mesh->dirty &= ~(1u << slot);
+}
 static void ReserveIndices(size_t count)
 {
 	if (count <= indexCapacity)
@@ -567,11 +649,13 @@ static void ReserveIndices(size_t count)
 	indices = p;
 	indexCapacity = capacity;
 }
-void WebGL_DrawTriangles(int count, int elements, const void *data)
+void WebGL_DrawTriangles(int count, int elements, const void *data, const void *meshKey)
 {
 	if (elements == 0)
 		return;
 	GAME_ASSERT(count > 0 && elements > 0 && elements % 3 == 0 && data);
+	GAME_ASSERT(meshKey);
+	MeshBufferCache *mesh = FindMesh(meshKey, true);
 	Prepare();
 	for (unsigned i = 0; i < ATTRIBUTE_COUNT; i++)
 	{
@@ -581,7 +665,11 @@ void WebGL_DrawTriangles(int count, int elements, const void *data)
 		{
 			GAME_ASSERT(a->pointer);
 			size_t componentSize = a->type == GL_UNSIGNED_BYTE ? sizeof(GLubyte) : sizeof(GLfloat);
-			Upload(&attributes[i], GL_ARRAY_BUFFER, a->pointer, (size_t)count * a->size * componentSize);
+			if (mesh->components[i] != a->size || mesh->types[i] != a->type)
+				mesh->dirty |= 1u << i;
+			mesh->components[i] = a->size;
+			mesh->types[i] = a->type;
+			BindMeshBuffer(mesh, i, GL_ARRAY_BUFFER, a->pointer, a->pointer, (size_t)count * a->size * componentSize);
 			glEnableVertexAttribArray(i);
 			glVertexAttribPointer(i, a->size, a->type, a->type == GL_UNSIGNED_BYTE, 0, 0);
 		}
@@ -596,27 +684,33 @@ void WebGL_DrawTriangles(int count, int elements, const void *data)
 				glVertexAttrib2fv(i, uv);
 		}
 	}
-	GLenum mode = GL_TRIANGLES;
-	if (wireframe)
+	if (mesh->wireframe != wireframe)
 	{
-		const uint32_t *source = data;
-		ReserveIndices((size_t)elements * 2);
+		mesh->dirty |= WEBGL_DIRTY_INDEX;
+		mesh->wireframe = wireframe;
+	}
+	const void *source = data;
+	GLenum mode = wireframe ? GL_LINES : GL_TRIANGLES;
+	int drawElements = wireframe ? elements * 2 : elements;
+	size_t indexBytes = (size_t)drawElements * sizeof(uint32_t);
+	if (wireframe && NeedsUpload(mesh, ATTRIBUTE_COUNT, source, indexBytes))
+	{
+		const uint32_t *triangles = data;
+		ReserveIndices((size_t)drawElements);
 		for (int i = 0; i < elements; i += 3)
 		{
 			size_t k = (size_t)i * 2;
-			indices[k] = source[i];
-			indices[k + 1] = source[i + 1];
-			indices[k + 2] = source[i + 1];
-			indices[k + 3] = source[i + 2];
-			indices[k + 4] = source[i + 2];
-			indices[k + 5] = source[i];
+			indices[k] = triangles[i];
+			indices[k + 1] = triangles[i + 1];
+			indices[k + 2] = triangles[i + 1];
+			indices[k + 3] = triangles[i + 2];
+			indices[k + 4] = triangles[i + 2];
+			indices[k + 5] = triangles[i];
 		}
 		data = indices;
-		elements *= 2;
-		mode = GL_LINES;
 	}
-	Upload(&elementBuffer, GL_ELEMENT_ARRAY_BUFFER, data, (size_t)elements * sizeof(uint32_t));
-	glDrawElements(mode, elements, GL_UNSIGNED_INT, 0);
+	BindMeshBuffer(mesh, ATTRIBUTE_COUNT, GL_ELEMENT_ARRAY_BUFFER, source, data, indexBytes);
+	glDrawElements(mode, drawElements, GL_UNSIGNED_INT, 0);
 }
 void WebGL_Begin(GLenum mode)
 {

@@ -4,7 +4,18 @@
 // Desktop GL headers supply enums/types only; native builds never include this file.
 void WebGL_Init(void);
 void WebGL_Shutdown(void);
-void WebGL_DrawTriangles(int vertexCount, int indexCount, const void *indices);
+enum
+{
+	WEBGL_DIRTY_POSITION = 1 << 0,
+	WEBGL_DIRTY_NORMAL = 1 << 1,
+	WEBGL_DIRTY_COLOR = 1 << 2,
+	WEBGL_DIRTY_UV = 1 << 3,
+	WEBGL_DIRTY_INDEX = 1 << 4,
+	WEBGL_DIRTY_ALL = (1 << 5) - 1
+};
+void WebGL_DrawTriangles(int vertexCount, int indexCount, const void *indices, const void *meshKey);
+void WebGL_InvalidateMesh(const void *meshKey, unsigned mask);
+void WebGL_ForgetMesh(const void *meshKey);
 void WebGL_Enable(GLenum cap);
 void WebGL_Disable(GLenum cap);
 GLboolean WebGL_IsEnabled(GLenum cap);

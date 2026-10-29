@@ -399,7 +399,13 @@ void DisposeSuperTileMemoryList(void)
 			/* NUKE ALL MASTER ARRAYS WHICH WILL FREE UP ALL SUPERTILE MEMORY */
 
 	if (gSuperTileMeshData)
+	{
+#ifdef __EMSCRIPTEN__
+		for (int i = 0; i < MAX_SUPERTILES; i++)
+			WebGL_ForgetMesh(&gSuperTileMeshData[i]);
+#endif
 		SafeDisposePtr((Ptr)gSuperTileMeshData);
+	}
 	gSuperTileMeshData = nil;
 
 	if (gSuperTileCoords)
@@ -685,6 +691,9 @@ OGLVector3D			vertexNormalList[NUM_VERTICES_IN_SUPERTILE];
 		gHiccupTimer &= 0x3;							// spread over 4 frames
 	}
 
+#ifdef __EMSCRIPTEN__
+	WebGL_InvalidateMesh(meshData, WEBGL_DIRTY_POSITION | WEBGL_DIRTY_INDEX);
+#endif
 	return(superTileNum);
 }
 

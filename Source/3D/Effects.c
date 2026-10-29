@@ -696,6 +696,9 @@ OGLBoundingBox	bbox;
 
 			geoData->numTriangles = n*2;
 			geoData->numPoints = n*4;
+#ifdef __EMSCRIPTEN__
+			WebGL_InvalidateMesh(geoData, WEBGL_DIRTY_POSITION | WEBGL_DIRTY_COLOR);
+#endif
 
 			bbox.min.x = minX;									// build bbox for culling test
 			bbox.min.y = minY;

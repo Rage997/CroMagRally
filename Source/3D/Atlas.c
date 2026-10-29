@@ -704,6 +704,9 @@ void TextMesh_Update(const char* text, int flags, ObjNode* textNode)
 
 	// Lay out triangles
 	PrepVertices(font, text, flags, &metrics, mesh->points, mesh->uvs);
+#ifdef __EMSCRIPTEN__
+	WebGL_InvalidateMesh(mesh, WEBGL_DIRTY_POSITION | WEBGL_DIRTY_UV);
+#endif
 }
 
 /***************************************************************/

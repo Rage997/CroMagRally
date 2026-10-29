@@ -6,6 +6,9 @@
 
 void ReallocateQuadMesh(MOVertexArrayData* mesh, int numQuads)
 {
+#ifdef __EMSCRIPTEN__
+	WebGL_ForgetMesh(mesh);
+#endif
 	if (mesh->points)
 	{
 		SafeDisposePtr((Ptr) mesh->points);

@@ -328,6 +328,9 @@ static void MovePaneDivider(ObjNode* theNode)
 
 	mesh->numPoints = p;
 	mesh->numTriangles = p/2;
+#ifdef __EMSCRIPTEN__
+	WebGL_InvalidateMesh(mesh, WEBGL_DIRTY_POSITION);
+#endif
 }
 
 static ObjNode* MakePaneDivider(void)

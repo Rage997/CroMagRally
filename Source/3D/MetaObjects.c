@@ -316,6 +316,9 @@ static void SetMetaObjectToGeometry(MetaObjectPtr mo, uintptr_t subType, void *d
 static void SetMetaObjectToVertexArrayGeometry(MOVertexArrayObject *geoObj, MOVertexArrayData *data)
 {
 int	i;
+#ifdef __EMSCRIPTEN__
+	WebGL_ForgetMesh(&geoObj->objectData);
+#endif
 
 			/* INIT THE DATA */
 
@@ -676,7 +679,7 @@ use_current:
 
 //	glLockArraysEXT(0, data->numPoints);
 #ifdef __EMSCRIPTEN__
-	WebGL_DrawTriangles(data->numPoints, data->numTriangles * 3, data->triangles);
+	WebGL_DrawTriangles(data->numPoints, data->numTriangles * 3, data->triangles, data);
 #else
 	glDrawElements(GL_TRIANGLES,data->numTriangles*3,GL_UNSIGNED_INT,&data->triangles[0]);
 #endif
@@ -1039,6 +1042,9 @@ MOPictureData *data = &obj->objectData;
 
 void MO_DisposeObject_Geometry_VertexArray(MOVertexArrayData *data)
 {
+#ifdef __EMSCRIPTEN__
+	WebGL_ForgetMesh(data);
+#endif
 		/* DEREFERENCE ANY MATERIALS */
 
 	int numMaterials = data->numMaterials;
@@ -1113,6 +1119,9 @@ MOMaterialData		*data = &obj->objectData;
 void MO_DuplicateVertexArrayData(MOVertexArrayData *inData, MOVertexArrayData *outData)
 {
 int	i,n,s;
+#ifdef __EMSCRIPTEN__
+	WebGL_ForgetMesh(outData);
+#endif
 			/***********************************/
 			/* GET NEW REFERENCES TO MATERIALS */
 			/***********************************/
@@ -1510,6 +1519,9 @@ MOVertexArrayObject	*vObj;
 		uvPtr[i].u += du;
 		uvPtr[i].v += dv;
 	}
+#ifdef __EMSCRIPTEN__
+	WebGL_InvalidateMesh(data, WEBGL_DIRTY_UV);
+#endif
 }
 
 

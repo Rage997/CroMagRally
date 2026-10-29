@@ -280,7 +280,9 @@ SkeletonObjDataType	*currentSkelObjData;
 
 	for (i = 0; i < numTriMeshes; i++)
 	{
-//		gLocalTriMeshesOfSkelType[skelType][i].bBox = gBBox;				// apply to local copy of trimesh
+#ifdef __EMSCRIPTEN__
+		WebGL_InvalidateMesh(&gLocalTriMeshesOfSkelType[skelType][i], WEBGL_DIRTY_POSITION | WEBGL_DIRTY_NORMAL);
+#endif
 	}
 }
 
